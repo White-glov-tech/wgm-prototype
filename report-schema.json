@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "headline": {"type":"string"},
+    "summary": {"type":"string"},
+    "strengths": {"type":"array","items":{"type":"string"},"minItems":1,"maxItems":5},
+    "coaching": {"type":"string"},
+    "clientContext": {"type":"string"},
+    "nextFocus": {"type":"string"},
+    "integrity": {"type":"string"}
+  },
+  "required": ["headline","summary","strengths","coaching","clientContext","nextFocus","integrity"],
+  "additionalProperties": false
+}

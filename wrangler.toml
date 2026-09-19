@@ -1,0 +1,13 @@
+name = "wgm-prototype-v1-1"
+main = "src/worker.js"
+compatibility_date = "2026-09-18"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+DEMO_MODE = "true"
+SCRIN_API_BASE_URL = "https://scrin.io"
+# Set OPENAI_MODEL in Cloudflare when enabling live AI generation.
+# Keep API keys/tokens in Wrangler secrets, never here.
