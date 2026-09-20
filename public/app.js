@@ -12,6 +12,8 @@ const state = {
   deliveryQueue: [],
   toast: null,
   syncMessage: 'Demo data loaded. Connect Scrin to replace this with the three live VAs.',
+  role: localStorage.getItem('wgmRole') || 'owner',
+  portalEmployer: localStorage.getItem('wgmPortalEmployer') || '',
 };
 
 const defaultReport = {
@@ -186,7 +188,7 @@ function loadLocalEmployees(){
 
 function saveEmployees(){
   try{
-    localStorage.setItem('wgmEmployees', JSON.stringify(state.employees));
+    localStorage.setItem('wgmEmployees',JSON.stringify(state.employees));
   }catch{}
 }
 
@@ -215,7 +217,7 @@ function initials(name=''){
 function hoursLabel(decimal=0){
   const total = Math.max(
     0,
-    Math.round(Number(decimal || 0) * 60)
+    Math.round(Number(decimal||0) * 60)
   );
 
   return `${Math.floor(total/60)}h ${String(total%60).padStart(2,'0')}m`;
@@ -225,7 +227,7 @@ function coverage(e){
   return e.expectedHours
     ? Math.min(
         100,
-        Math.round((e.trackedHours / e.expectedHours) * 1000) / 10
+        Math.round((e.trackedHours/e.expectedHours)*1000)/10
       )
     : null;
 }
@@ -260,13 +262,13 @@ function escapeHtml(v=''){
 }
 
 function toast(msg){
-  state.toast = msg;
+  state.toast=msg;
   render();
 
-  setTimeout(() => {
-    state.toast = null;
+  setTimeout(()=>{
+    state.toast=null;
     render();
-  }, 2300);
+  },2300);
 }
 
 function metric(label,value,sub){
@@ -281,7 +283,7 @@ function metric(label,value,sub){
 
 function mixBar(label,v,total=100){
   const pct = total
-    ? Math.max(0, Math.min(100, (v/total)*100))
+    ? Math.max(0,Math.min(100,(v/total)*100))
     : 0;
 
   return `
@@ -302,25 +304,199 @@ function navButton(id,label,badge=''){
       class="${state.page===id?'active':''}"
     >
       <span>${label}</span>
-      ${
-        badge
-          ? `<span class="badge">${badge}</span>`
-          : ''
-      }
+      ${badge ? `<span class="badge">${badge}</span>` : ''}
     </button>
   `;
 }
 
+function roleLabel(){
+  return {
+    owner:'WGM Owner',
+    reviewer:'White Glove Reviewer',
+    employer:'Employer Portal',
+    employee:'Employee Portal'
+  }[state.role] || 'WGM Owner';
+}
+
+function roleSubLabel(){
+  return {
+    owner:'Super Admin',
+    reviewer:'Assigned Accounts',
+    employer:'Company Owner / Admin',
+    employee:'My Work'
+  }[state.role] || 'Super Admin';
+}
+
+function setRole(role){
+
+  state.role = role;
+
+  localStorage.setItem(
+    'wgmRole',
+    role
+  );
+
+  if(role === 'owner'){
+
+    state.page = 'dashboard';
+
+  } else if(role === 'reviewer'){
+
+    state.page = 'dashboard';
+
+  } else if(role === 'employer'){
+
+    const employers = [
+      ...new Set(
+        state.employees
+          .map(e=>e.employer)
+          .filter(Boolean)
+      )
+    ];
+
+    if(
+      !state.portalEmployer
+      ||
+      !employers.includes(state.portalEmployer)
+    ){
+
+      state.portalEmployer =
+        employee()?.employer
+        ||
+        employers[0]
+        ||
+        '';
+
+      localStorage.setItem(
+        'wgmPortalEmployer',
+        state.portalEmployer
+      );
+    }
+
+    state.page = 'dashboard';
+
+  } else if(role === 'employee'){
+
+    state.page = 'dashboard';
+  }
+
+  render();
+}
+
+function navMarkup(){
+
+  if(state.role === 'reviewer'){
+
+    return [
+      navButton(
+        'dashboard',
+        'Reviewer Home'
+      ),
+
+      navButton(
+        'review',
+        'Review Queue',
+        state.reportStatus==='Draft ready'
+          ? '1'
+          : ''
+      ),
+
+      navButton(
+        'monitoring',
+        'Evidence Review'
+      ),
+
+      navButton(
+        'reports',
+        'Reports'
+      )
+    ].join('');
+  }
+
+  if(state.role === 'employer'){
+
+    return [
+      navButton(
+        'dashboard',
+        'Overview'
+      ),
+
+      navButton(
+        'employees',
+        'My Team'
+      ),
+
+      navButton(
+        'monitoring',
+        'Monitoring'
+      ),
+
+      navButton(
+        'reports',
+        'Reports'
+      ),
+
+      navButton(
+        'subscriptions',
+        'Billing'
+      )
+    ].join('');
+  }
+
+  if(state.role === 'employee'){
+
+    return [
+      navButton(
+        'dashboard',
+        'My Activity'
+      ),
+
+      navButton(
+        'monitoring',
+        'My Monitoring'
+      ),
+
+      navButton(
+        'reports',
+        'My Reports'
+      )
+    ].join('');
+  }
+
+  return [
+    navButton('dashboard','Dashboard'),
+    navButton('companies','Companies'),
+    navButton('employees','Employees'),
+    navButton('monitoring','Monitoring'),
+    navButton('reports','Reports'),
+    navButton(
+      'review',
+      'Review Queue',
+      state.reportStatus==='Draft ready'
+        ? '1'
+        : ''
+    ),
+    navButton('subscriptions','Subscriptions'),
+    navButton('dataSources','Data Sources'),
+    navButton('settings','Settings')
+  ].join('');
+}
+
 function shell(content,title){
+
   return `
     <div class="app-shell">
 
       <aside class="sidebar">
 
         <div class="brand">
-          <div class="brand-mark">W</div>
+
+          <div class="brand-mark">
+            W
+          </div>
 
           <div>
+
             <div class="brand-name">
               WHITE GLOVE MONITOR
             </div>
@@ -328,27 +504,17 @@ function shell(content,title){
             <div class="brand-sub">
               WORKFORCE INTELLIGENCE
             </div>
+
           </div>
+
         </div>
 
         <nav class="nav">
-          ${navButton('dashboard','Dashboard')}
-          ${navButton('companies','Companies')}
-          ${navButton('employees','Employees')}
-          ${navButton('monitoring','Monitoring')}
-          ${navButton('reports','Reports')}
-          ${
-            navButton(
-              'review',
-              'Review Queue',
-              state.reportStatus==='Draft ready' ? '1' : ''
-            )
-          }
-          ${navButton('subscriptions','Subscriptions')}
-          ${navButton('settings','Settings')}
+          ${navMarkup()}
         </nav>
 
         <div class="sidebar-bottom">
+
           <div class="user-chip">
 
             <div class="avatar">
@@ -356,14 +522,19 @@ function shell(content,title){
             </div>
 
             <div>
-              <b>WGM Owner</b>
+
+              <b>
+                ${roleLabel()}
+              </b>
 
               <div style="font-size:11px;opacity:.7">
-                Super Admin
+                ${roleSubLabel()}
               </div>
+
             </div>
 
           </div>
+
         </div>
 
       </aside>
@@ -372,10 +543,52 @@ function shell(content,title){
 
         <header class="topbar">
 
-          <h1>${title}</h1>
+          <h1>
+            ${title}
+          </h1>
 
-          <div class="mode-pill">
-            ${state.mode} MODE · Multi-employer V1.1
+          <div style="display:flex;align-items:center;gap:10px">
+
+            <select
+              id="roleSwitcher"
+              class="map-input"
+              style="min-width:190px;padding:8px 10px"
+            >
+
+              <option
+                value="owner"
+                ${state.role==='owner'?'selected':''}
+              >
+                WGM Owner
+              </option>
+
+              <option
+                value="reviewer"
+                ${state.role==='reviewer'?'selected':''}
+              >
+                White Glove Reviewer
+              </option>
+
+              <option
+                value="employer"
+                ${state.role==='employer'?'selected':''}
+              >
+                Employer Portal
+              </option>
+
+              <option
+                value="employee"
+                ${state.role==='employee'?'selected':''}
+              >
+                Employee Portal
+              </option>
+
+            </select>
+
+            <div class="mode-pill">
+              ${state.mode} MODE · Multi-employer V1.2
+            </div>
+
           </div>
 
         </header>
@@ -398,43 +611,65 @@ function shell(content,title){
 
 function dashboard(){
 
-  const employerCount = new Set(
-    state.employees
-      .map(e => e.employer)
-      .filter(Boolean)
-  ).size;
+  if(state.role === 'employer'){
+    return employerDashboard();
+  }
 
-  const ready = state.employees.filter(
-    e => /Ready|Context applied/i.test(
-      e.reportingStatus || ''
-    )
-  ).length;
+  if(state.role === 'employee'){
+    return employeeDashboard();
+  }
 
-  const review = state.employees.filter(
-    e => /Review/i.test(
-      e.reportingStatus || ''
-    )
-  ).length;
+  if(state.role === 'reviewer'){
+    return reviewerDashboard();
+  }
+
+  const employerCount =
+    new Set(
+      state.employees
+        .map(e=>e.employer)
+        .filter(Boolean)
+    ).size;
+
+  const ready =
+    state.employees.filter(
+      e =>
+        /Ready|Context applied/i.test(
+          e.reportingStatus || ''
+        )
+    ).length;
+
+  const review =
+    state.employees.filter(
+      e =>
+        /Review/i.test(
+          e.reportingStatus || ''
+        )
+    ).length;
 
   return shell(
     `
     <div class="header-row">
 
       <div>
-        <h2>WGM Command Center</h2>
+
+        <h2>
+          WGM Command Center
+        </h2>
 
         <p>
-          One Scrin connection can feed multiple VAs while
-          WGM keeps each employer relationship separate.
+          One capture connection can feed multiple VAs while WGM keeps employer,
+          evidence, review and reporting records separate.
         </p>
+
       </div>
 
       <div class="actions">
+
         <button
           class="btn"
-          data-page="settings"
+          data-page="dataSources"
         >
-          Scrin connection
+          Data sources
         </button>
 
         <button
@@ -443,35 +678,44 @@ function dashboard(){
         >
           Generate reports
         </button>
+
       </div>
 
     </div>
 
     <div class="grid metrics">
 
-      ${metric(
-        'Employers',
-        employerCount,
-        'Mapped in WGM'
-      )}
+      ${
+        metric(
+          'Employers',
+          employerCount,
+          'Mapped organizations'
+        )
+      }
 
-      ${metric(
-        'Employees monitored',
-        state.employees.length,
-        'From one Scrin connection'
-      )}
+      ${
+        metric(
+          'Employees monitored',
+          state.employees.length,
+          'Across connected sources'
+        )
+      }
 
-      ${metric(
-        'Ready to generate',
-        ready,
-        'Context complete'
-      )}
+      ${
+        metric(
+          'Ready to generate',
+          ready,
+          'Context complete'
+        )
+      }
 
-      ${metric(
-        'Needs review',
-        review,
-        'Before release'
-      )}
+      ${
+        metric(
+          'Needs review',
+          review,
+          'Before release'
+        )
+      }
 
     </div>
 
@@ -480,23 +724,25 @@ function dashboard(){
       <div class="card panel">
 
         <div class="panel-title">
-          Three-VA demo structure
+          Connected workforce
         </div>
 
         <div class="panel-sub">
-          The Scrin account supplies the people.
-          WGM owns the employer mapping and reporting workflow.
+          Scrin currently supplies evidence. WGM owns tenant mapping,
+          analysis, human review and report release.
         </div>
 
         <table>
 
           <thead>
+
             <tr>
               <th>Employee</th>
               <th>WGM employer</th>
-              <th>Scrin employment ID</th>
+              <th>Source ID</th>
               <th>Status</th>
             </tr>
+
           </thead>
 
           <tbody>
@@ -507,27 +753,34 @@ function dashboard(){
                 <tr>
 
                   <td>
+
                     <span
                       class="row-link"
                       data-open-id="${escapeHtml(e.id)}"
                     >
                       ${escapeHtml(e.name)}
                     </span>
+
                   </td>
 
                   <td>
-                    ${escapeHtml(e.employer || 'Unassigned')}
+                    ${escapeHtml(e.employer||'Unassigned')}
                   </td>
 
                   <td>
-                    ${escapeHtml(e.employmentId || '—')}
+                    ${escapeHtml(e.employmentId||'—')}
                   </td>
 
                   <td>
+
                     <span class="status ${statusClass(e.reportingStatus)}">
+
                       <span class="dot"></span>
-                      ${escapeHtml(e.reportingStatus || 'Synced')}
+
+                      ${escapeHtml(e.reportingStatus||'Synced')}
+
                     </span>
+
                   </td>
 
                 </tr>
@@ -544,31 +797,45 @@ function dashboard(){
       <div class="card panel">
 
         <div class="panel-title">
-          What the demo proves
+          RFP workflow coverage
         </div>
 
         <div class="context-box">
-          <h4>1 API connection</h4>
+
+          <h4>
+            Capture & evidence
+          </h4>
+
           <p>
-            The WGM backend authenticates to the shared Scrin
-            account with one server-side token.
+            Employees, hours, activities, screenshots and app/URL metadata
+            enter through a connector.
           </p>
+
         </div>
 
         <div class="context-box">
-          <h4>3 employer relationships</h4>
+
+          <h4>
+            Human review
+          </h4>
+
           <p>
-            WGM maps each employment record to the correct client,
-            even when Scrin groups them under one account.
+            Green / Yellow / Red review states control approval and release.
           </p>
+
         </div>
 
         <div class="context-box">
-          <h4>Separate reports</h4>
+
+          <h4>
+            Provider-independent output
+          </h4>
+
           <p>
-            Each VA gets an independent schedule, context,
-            calculations, AI draft and human review record.
+            The same WGM reporting layer will remain when Scrin is eventually
+            replaced by a WGM-native desktop monitor.
           </p>
+
         </div>
 
       </div>
@@ -579,27 +846,684 @@ function dashboard(){
   );
 }
 
-function companies(){
+function portalEmployees(){
 
-  const groups = {};
+  if(state.role !== 'employer'){
+    return state.employees;
+  }
 
-  state.employees.forEach(e => {
-    const k = e.employer || 'Unassigned';
+  const employers = [
+    ...new Set(
+      state.employees
+        .map(e=>e.employer)
+        .filter(Boolean)
+    )
+  ];
 
-    (groups[k] ||= []).push(e);
-  });
+  if(
+    !state.portalEmployer
+    ||
+    !employers.includes(state.portalEmployer)
+  ){
+
+    state.portalEmployer =
+      employee()?.employer
+      ||
+      employers[0]
+      ||
+      '';
+
+    localStorage.setItem(
+      'wgmPortalEmployer',
+      state.portalEmployer
+    );
+  }
+
+  return state.employees.filter(
+    e =>
+      e.employer === state.portalEmployer
+  );
+}
+
+function employerDashboard(){
+
+  const team =
+    portalEmployees();
+
+  const total =
+    team.reduce(
+      (sum,e) =>
+        sum + Number(e.trackedHours||0),
+      0
+    );
+
+  const avgCoverage =
+    team.length
+      ? Math.round(
+          team.reduce(
+            (sum,e) =>
+              sum + Number(coverage(e)||0),
+            0
+          ) / team.length
+        )
+      : 0;
+
+  const released =
+    team.filter(
+      e =>
+        e.reportingStatus === 'Released'
+        ||
+        (
+          state.reportEmployeeId === e.id
+          &&
+          state.reportStatus === 'Released'
+        )
+    ).length;
 
   return shell(
     `
     <div class="header-row">
 
       <div>
-        <h2>Companies</h2>
+
+        <h2>
+          ${escapeHtml(state.portalEmployer || 'Employer')} Workforce Overview
+        </h2>
+
+        <p>
+          Employer access is scoped to this organization only.
+          Unreleased White Glove drafts are not shown here.
+        </p>
+
+      </div>
+
+      <div class="actions">
+
+        <select
+          id="employerSwitcher"
+          class="map-input"
+        >
+
+          ${
+            [
+              ...new Set(
+                state.employees
+                  .map(e=>e.employer)
+                  .filter(Boolean)
+              )
+            ].map(
+              x => `
+              <option ${x===state.portalEmployer?'selected':''}>
+                ${escapeHtml(x)}
+              </option>
+              `
+            ).join('')
+          }
+
+        </select>
+
+      </div>
+
+    </div>
+
+    <div class="grid metrics">
+
+      ${
+        metric(
+          'Active team members',
+          team.length,
+          'Connected employees'
+        )
+      }
+
+      ${
+        metric(
+          'Tracked this period',
+          hoursLabel(total),
+          'Across visible team'
+        )
+      }
+
+      ${
+        metric(
+          'Average coverage',
+          `${avgCoverage}%`,
+          'Schedule benchmark'
+        )
+      }
+
+      ${
+        metric(
+          'Released reports',
+          released,
+          'Human reviewed'
+        )
+      }
+
+    </div>
+
+    <div class="grid two-col">
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          My Team
+        </div>
+
+        <table>
+
+          <thead>
+
+            <tr>
+              <th>Employee</th>
+              <th>Tracked</th>
+              <th>Coverage</th>
+              <th>Report</th>
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            ${
+              team.map(
+                e => `
+                <tr>
+
+                  <td>
+
+                    <span
+                      class="row-link"
+                      data-open-id="${escapeHtml(e.id)}"
+                    >
+                      ${escapeHtml(e.name)}
+                    </span>
+
+                    <div class="small">
+                      ${escapeHtml(e.role||'Employee')}
+                    </div>
+
+                  </td>
+
+                  <td>
+                    ${hoursLabel(e.trackedHours)}
+                  </td>
+
+                  <td>
+                    ${coverage(e)??'—'}%
+                  </td>
+
+                  <td>
+
+                    <span class="status ${statusClass(e.reportingStatus)}">
+
+                      <span class="dot"></span>
+
+                      ${escapeHtml(e.reportingStatus||'Synced')}
+
+                    </span>
+
+                  </td>
+
+                </tr>
+                `
+              ).join('')
+              ||
+              '<tr><td colspan="4">No employees mapped to this employer.</td></tr>'
+            }
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          What you can access
+        </div>
+
+        <div class="context-box">
+
+          <h4>
+            Monitoring
+          </h4>
+
+          <p>
+            Recorded hours, screenshots, workstreams, apps/URLs
+            and employee context for your own team.
+          </p>
+
+        </div>
+
+        <div class="context-box">
+
+          <h4>
+            Reports
+          </h4>
+
+          <p>
+            Only White Glove-reviewed and released reports
+            should become customer records.
+          </p>
+
+        </div>
+
+        <div class="context-box">
+
+          <h4>
+            Billing
+          </h4>
+
+          <p>
+            Subscription, paid seats, invoices and cancellation state
+            remain separate from employee evidence.
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+    `,
+    'Employer Portal'
+  );
+}
+
+function employeeDashboard(){
+
+  const e =
+    employee();
+
+  if(!e){
+
+    return shell(
+      '<div class="card empty">No employee selected.</div>',
+      'Employee Portal'
+    );
+  }
+
+  return shell(
+    `
+    <div class="header-row">
+
+      <div>
+
+        <h2>
+          My Activity
+        </h2>
+
+        <p>
+          ${escapeHtml(e.name)} · ${escapeHtml(e.employer||'Employer')}
+        </p>
+
+      </div>
+
+      <span class="status green">
+        <span class="dot"></span>
+        Tracking connected
+      </span>
+
+    </div>
+
+    <div class="grid metrics">
+
+      ${
+        metric(
+          'Tracked this period',
+          hoursLabel(e.trackedHours),
+          'My recorded time'
+        )
+      }
+
+      ${
+        metric(
+          'Schedule coverage',
+          `${coverage(e)??'—'}%`,
+          `${e.expectedHours||'—'} expected hours`
+        )
+      }
+
+      ${
+        metric(
+          'Active workdays',
+          e.activeDays||'—',
+          'Reporting period'
+        )
+      }
+
+      ${
+        metric(
+          'Report status',
+          escapeHtml(e.reportingStatus||'Synced'),
+          'My released record'
+        )
+      }
+
+    </div>
+
+    <div class="grid two-col">
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          My work profile
+        </div>
+
+        <div class="context-box">
+
+          <h4>
+            Expected schedule
+          </h4>
+
+          <p>
+            ${escapeHtml(e.schedule||'Not set')}
+          </p>
+
+          <p>
+            ${escapeHtml(e.timezone||'Timezone not set')}
+          </p>
+
+        </div>
+
+        <div class="context-box">
+
+          <h4>
+            Context on file
+          </h4>
+
+          <p>
+            ${escapeHtml(e.context||'No context entered.')}
+          </p>
+
+        </div>
+
+      </div>
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          Employee access boundary
+        </div>
+
+        <p class="small">
+          This view is intentionally limited to this employee's own authorized
+          hours, screenshots, notes and reports. Other employees and other
+          customer organizations are not visible.
+        </p>
+
+        <div class="actions">
+
+          <button
+            class="btn primary"
+            data-page="monitoring"
+          >
+            View my monitoring
+          </button>
+
+          <button
+            class="btn"
+            data-page="reports"
+          >
+            View my reports
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+    `,
+    'Employee Portal'
+  );
+}
+
+function reviewerDashboard(){
+
+  const needsReview =
+    state.employees.filter(
+      e =>
+        reviewColor(e) !== 'Green'
+    );
+
+  return shell(
+    `
+    <div class="header-row">
+
+      <div>
+
+        <h2>
+          Reviewer Workspace
+        </h2>
+
+        <p>
+          Assigned reports are triaged by evidence coverage
+          and review state before release.
+        </p>
+
+      </div>
+
+      <button
+        class="btn primary"
+        data-page="review"
+      >
+        Open review queue
+      </button>
+
+    </div>
+
+    <div class="grid metrics">
+
+      ${
+        metric(
+          'Assigned employees',
+          state.employees.length,
+          'Prototype assignment'
+        )
+      }
+
+      ${
+        metric(
+          'Green eligible',
+          state.employees.filter(
+            e =>
+              reviewColor(e) === 'Green'
+          ).length,
+          'Can be batch approved'
+        )
+      }
+
+      ${
+        metric(
+          'Yellow / Red',
+          needsReview.length,
+          'Individual review'
+        )
+      }
+
+      ${
+        metric(
+          'Delivery queue',
+          state.deliveryQueue.length,
+          'Released events'
+        )
+      }
+
+    </div>
+
+    <div class="card panel">
+
+      <div class="panel-title">
+        Priority review
+      </div>
+
+      ${reviewQueueTable()}
+
+    </div>
+    `,
+    'Reviewer Home'
+  );
+}
+
+function reviewColor(e){
+
+  const cov =
+    coverage(e);
+
+  if(Number(e.concerns||0) > 1){
+    return 'Red';
+  }
+
+  if(
+    Number(e.concerns||0) === 1
+    ||
+    (
+      cov !== null
+      &&
+      cov < 90
+    )
+  ){
+    return 'Yellow';
+  }
+
+  return 'Green';
+}
+
+function reviewQueueTable(){
+
+  return `
+    <table>
+
+      <thead>
+
+        <tr>
+          <th>Employer</th>
+          <th>Employee</th>
+          <th>Period</th>
+          <th>Evidence coverage</th>
+          <th>Status</th>
+          <th>Release</th>
+        </tr>
+
+      </thead>
+
+      <tbody>
+
+        ${
+          state.employees.map(
+            e => {
+
+              const color =
+                reviewColor(e);
+
+              const release =
+                (
+                  state.reportEmployeeId === e.id
+                    ? state.reportStatus
+                    : e.reportingStatus
+                )
+                ||
+                'Not generated';
+
+              return `
+                <tr>
+
+                  <td>
+                    ${escapeHtml(e.employer||'Unassigned')}
+                  </td>
+
+                  <td>
+
+                    <span
+                      class="row-link"
+                      data-open-id="${escapeHtml(e.id)}"
+                    >
+                      ${escapeHtml(e.name)}
+                    </span>
+
+                  </td>
+
+                  <td>
+                    ${periodLabel()}
+                  </td>
+
+                  <td>
+                    ${coverage(e)??'—'}%
+                  </td>
+
+                  <td>
+
+                    <span
+                      class="status ${
+                        color==='Green'
+                          ? 'green'
+                          : color==='Yellow'
+                            ? 'amber'
+                            : 'red'
+                      }"
+                    >
+
+                      <span class="dot"></span>
+
+                      ${color}
+
+                    </span>
+
+                  </td>
+
+                  <td>
+                    ${escapeHtml(release)}
+                  </td>
+
+                </tr>
+              `;
+            }
+          ).join('')
+        }
+
+      </tbody>
+
+    </table>
+  `;
+}
+
+function companies(){
+
+  const groups = {};
+
+  state.employees.forEach(
+    e => {
+
+      const k =
+        e.employer
+        ||
+        'Unassigned';
+
+      (
+        groups[k]
+        ||=
+        []
+      ).push(e);
+
+    }
+  );
+
+  return shell(
+    `
+    <div class="header-row">
+
+      <div>
+
+        <h2>
+          Companies
+        </h2>
 
         <p>
           Employer separation is controlled by WGM,
           not by the visual structure of the Scrin account.
         </p>
+
       </div>
 
       <button
@@ -616,12 +1540,14 @@ function companies(){
       <table>
 
         <thead>
+
           <tr>
             <th>WGM employer</th>
             <th>Employees</th>
             <th>Source</th>
             <th>Status</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -642,15 +1568,19 @@ function companies(){
 
                   <td>
                     ${escapeHtml(
-                      emps[0].source || 'WGH Managed'
+                      emps[0].source
+                      ||
+                      'WGH Managed'
                     )}
                   </td>
 
                   <td>
+
                     <span class="status green">
                       <span class="dot"></span>
                       Active
                     </span>
+
                   </td>
 
                 </tr>
@@ -676,12 +1606,16 @@ function employees(){
     <div class="header-row">
 
       <div>
-        <h2>Employees</h2>
+
+        <h2>
+          Employees
+        </h2>
 
         <p>
           Choose any synced VA to inspect monitoring data
           or generate a report.
         </p>
+
       </div>
 
       <div class="actions">
@@ -719,6 +1653,7 @@ function employees(){
       <table>
 
         <thead>
+
           <tr>
             <th>Employee</th>
             <th>WGM employer</th>
@@ -727,6 +1662,7 @@ function employees(){
             <th>Coverage</th>
             <th>Reporting status</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -746,17 +1682,17 @@ function employees(){
                   </span>
 
                   <div class="small">
-                    ${escapeHtml(e.role || 'Virtual Assistant')}
+                    ${escapeHtml(e.role||'Virtual Assistant')}
                   </div>
 
                 </td>
 
                 <td>
-                  ${escapeHtml(e.employer || 'Unassigned')}
+                  ${escapeHtml(e.employer||'Unassigned')}
                 </td>
 
                 <td>
-                  ${escapeHtml(e.employmentId || '—')}
+                  ${escapeHtml(e.employmentId||'—')}
                 </td>
 
                 <td>
@@ -764,14 +1700,19 @@ function employees(){
                 </td>
 
                 <td>
-                  ${coverage(e) ?? '—'}%
+                  ${coverage(e)??'—'}%
                 </td>
 
                 <td>
+
                   <span class="status ${statusClass(e.reportingStatus)}">
+
                     <span class="dot"></span>
-                    ${escapeHtml(e.reportingStatus || 'Synced')}
+
+                    ${escapeHtml(e.reportingStatus||'Synced')}
+
                   </span>
+
                 </td>
 
               </tr>
@@ -795,9 +1736,11 @@ function monitoring(){
 
 function employeeView(){
 
-  const e = employee();
+  const e =
+    employee();
 
   if(!e){
+
     return shell(
       '<div class="card empty">No employee selected.</div>',
       'Employee Monitoring'
@@ -832,20 +1775,24 @@ function employeeView(){
 
         <div class="employee-avatar">
           ${escapeHtml(
-            e.initials || initials(e.name)
+            e.initials
+            ||
+            initials(e.name)
           )}
         </div>
 
         <div>
+
           <h2 style="margin:0">
             ${escapeHtml(e.name)}
           </h2>
 
           <div class="small">
-            ${escapeHtml(e.employer || 'Unassigned employer')}
+            ${escapeHtml(e.employer||'Unassigned employer')}
             ·
-            ${escapeHtml(e.role || 'Virtual Assistant')}
+            ${escapeHtml(e.role||'Virtual Assistant')}
           </div>
+
         </div>
 
         <div class="spacer"></div>
@@ -863,7 +1810,11 @@ function employeeView(){
           tabs.map(
             t => `
             <button
-              class="tab ${state.employeeTab===t?'active':''}"
+              class="tab ${
+                state.employeeTab===t
+                  ? 'active'
+                  : ''
+              }"
               data-tab="${t}"
             >
               ${labels[t]}
@@ -889,25 +1840,30 @@ function employeeTabContent(e){
   }
 
   if(state.employeeTab === 'workstreams'){
+
     return `
       <div class="grid two-col">
 
         <div>
+
           ${
-            (e.workstreams || [])
+            (e.workstreams||[])
               .map(
-                x => mixBar(
-                  x[0],
-                  x[1]
-                )
+                x =>
+                  mixBar(
+                    x[0],
+                    x[1]
+                  )
               )
               .join('')
             ||
             '<div class="empty">Generate/sync period data to populate workstreams.</div>'
           }
+
         </div>
 
         <div class="callout">
+
           <strong>
             Reporting rule
           </strong>
@@ -915,6 +1871,7 @@ function employeeTabContent(e){
           Project time is the primary allocation signal.
           Screenshots and device activity support interpretation;
           they do not become a standalone productivity verdict.
+
         </div>
 
       </div>
@@ -922,25 +1879,30 @@ function employeeTabContent(e){
   }
 
   if(state.employeeTab === 'apps'){
+
     return `
       <div class="grid two-col">
 
         <div>
+
           ${
-            (e.apps || [])
+            (e.apps||[])
               .map(
-                x => mixBar(
-                  x[0],
-                  x[1]
-                )
+                x =>
+                  mixBar(
+                    x[0],
+                    x[1]
+                  )
               )
               .join('')
             ||
             '<div class="empty">Sync screenshot metadata to populate apps and URLs.</div>'
           }
+
         </div>
 
         <div class="context-box">
+
           <h4>
             How WGM uses this
           </h4>
@@ -950,6 +1912,7 @@ function employeeTabContent(e){
             and repeated patterns. They are contextual evidence,
             not a performance score.
           </p>
+
         </div>
 
       </div>
@@ -961,10 +1924,12 @@ function employeeTabContent(e){
   }
 
   if(state.employeeTab === 'reports'){
+
     return `
       <table>
 
         <thead>
+
           <tr>
             <th>Period</th>
             <th>Tracked</th>
@@ -972,6 +1937,7 @@ function employeeTabContent(e){
             <th>Review</th>
             <th>Status</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -987,12 +1953,13 @@ function employeeTabContent(e){
             </td>
 
             <td>
-              ${coverage(e) ?? '—'}%
+              ${coverage(e)??'—'}%
             </td>
 
             <td>
               ${
-                state.reportEmployeeId === e.id &&
+                state.reportEmployeeId===e.id
+                &&
                 /Approved|Released/.test(state.reportStatus)
                   ? 'Human reviewed'
                   : '—'
@@ -1004,7 +1971,7 @@ function employeeTabContent(e){
               <span
                 class="status ${
                   statusClass(
-                    state.reportEmployeeId === e.id
+                    state.reportEmployeeId===e.id
                       ? state.reportStatus
                       : e.reportingStatus
                   )
@@ -1015,7 +1982,7 @@ function employeeTabContent(e){
 
                 ${
                   escapeHtml(
-                    state.reportEmployeeId === e.id
+                    state.reportEmployeeId===e.id
                       ? state.reportStatus
                       : e.reportingStatus
                   )
@@ -1047,7 +2014,7 @@ function employeeTabContent(e){
                   8.1,
                   e.trackedHours /
                   Math.max(
-                    e.activeDays || 1,
+                    e.activeDays||1,
                     1
                   )
                 )
@@ -1059,7 +2026,9 @@ function employeeTabContent(e){
             Representative tracked day ·
             ${
               escapeHtml(
-                (e.workstreams?.[0]?.[0]) || 'Work'
+                (e.workstreams?.[0]?.[0])
+                ||
+                'Work'
               )
             }
           </div>
@@ -1084,23 +2053,30 @@ function employeeTabContent(e){
       <table>
 
         <thead>
+
           <tr>
             <th>Block</th>
             <th>Project</th>
             <th>Note</th>
             <th>Evidence</th>
           </tr>
+
         </thead>
 
         <tbody>
 
           <tr>
-            <td>8:45–10:18</td>
+
+            <td>
+              8:45–10:18
+            </td>
 
             <td>
               ${
                 escapeHtml(
-                  e.workstreams?.[0]?.[0] || 'Project'
+                  e.workstreams?.[0]?.[0]
+                  ||
+                  'Project'
                 )
               }
             </td>
@@ -1112,15 +2088,21 @@ function employeeTabContent(e){
             <td>
               Scrin activity + screenshots
             </td>
+
           </tr>
 
           <tr>
-            <td>10:28–12:04</td>
+
+            <td>
+              10:28–12:04
+            </td>
 
             <td>
               ${
                 escapeHtml(
-                  e.workstreams?.[1]?.[0] || 'Project'
+                  e.workstreams?.[1]?.[0]
+                  ||
+                  'Project'
                 )
               }
             </td>
@@ -1132,6 +2114,7 @@ function employeeTabContent(e){
             <td>
               Application / URL metadata
             </td>
+
           </tr>
 
         </tbody>
@@ -1154,15 +2137,15 @@ function employeeTabContent(e){
       ${
         metric(
           'Schedule coverage',
-          `${coverage(e) ?? '—'}%`,
-          `${e.expectedHours || '—'} expected hours`
+          `${coverage(e)??'—'}%`,
+          `${e.expectedHours||'—'} expected hours`
         )
       }
 
       ${
         metric(
           'Active workdays',
-          e.activeDays || '—',
+          e.activeDays||'—',
           'Reporting period'
         )
       }
@@ -1170,7 +2153,7 @@ function employeeTabContent(e){
       ${
         metric(
           'Review flags',
-          e.concerns || 0,
+          e.concerns||0,
           e.concerns
             ? 'Requires context'
             : 'No material flag'
@@ -1188,7 +2171,7 @@ function employeeTabContent(e){
         </div>
 
         ${
-          (e.weeks || [])
+          (e.weeks||[])
             .map(
               w => `
               <div class="context-box">
@@ -1224,11 +2207,11 @@ function employeeTabContent(e){
           </h4>
 
           <p>
-            ${escapeHtml(e.schedule || 'Not set')}
+            ${escapeHtml(e.schedule||'Not set')}
           </p>
 
           <p>
-            ${escapeHtml(e.timezone || 'Timezone not set')}
+            ${escapeHtml(e.timezone||'Timezone not set')}
           </p>
 
         </div>
@@ -1240,7 +2223,7 @@ function employeeTabContent(e){
           </h4>
 
           <p>
-            ${escapeHtml(e.context || 'No context entered.')}
+            ${escapeHtml(e.context||'No context entered.')}
           </p>
 
         </div>
@@ -1251,28 +2234,30 @@ function employeeTabContent(e){
   `;
 }
 
-
-/* ==========================================================
-   LIVE SCRIN SCREENSHOT VIEW
-   ========================================================== */
-
 function screenshotView(e){
 
   return `
     <div class="toolbar">
 
       <div class="field">
-        <label>Date</label>
+
+        <label>
+          Date
+        </label>
 
         <input
           id="screenDate"
           type="date"
           value="2026-09-18"
         >
+
       </div>
 
       <div class="field">
-        <label>Project</label>
+
+        <label>
+          Project
+        </label>
 
         <select>
 
@@ -1281,7 +2266,7 @@ function screenshotView(e){
           </option>
 
           ${
-            (e.workstreams || [])
+            (e.workstreams||[])
               .map(
                 x => `
                 <option>
@@ -1293,10 +2278,14 @@ function screenshotView(e){
           }
 
         </select>
+
       </div>
 
       <div class="field">
-        <label>Application</label>
+
+        <label>
+          Application
+        </label>
 
         <select>
 
@@ -1305,7 +2294,7 @@ function screenshotView(e){
           </option>
 
           ${
-            (e.apps || [])
+            (e.apps||[])
               .map(
                 x => `
                 <option>
@@ -1317,6 +2306,7 @@ function screenshotView(e){
           }
 
         </select>
+
       </div>
 
       <div class="spacer"></div>
@@ -1329,7 +2319,6 @@ function screenshotView(e){
       </button>
 
     </div>
-
 
     <div class="banner">
 
@@ -1352,20 +2341,20 @@ function screenshotView(e){
 
     </div>
 
-
     <div id="shotArea">
 
       <div class="shot-grid">
 
         ${
-          (e.shots || [])
+          (e.shots||[])
             .map(
-              s => shot(
-                s[0],
-                s[1],
-                s[2],
-                s[3]
-              )
+              s =>
+                shot(
+                  s[0],
+                  s[1],
+                  s[2],
+                  s[3]
+                )
             )
             .join('')
           ||
@@ -1378,69 +2367,69 @@ function screenshotView(e){
   `;
 }
 
+function shot(time,app,level,imageUrl){
 
-function shot(time, app, level, imageUrl){
+  const safeUrl =
+    imageUrl
+      ? escapeHtml(imageUrl)
+      : '';
 
-  const safeUrl = imageUrl
-    ? escapeHtml(imageUrl)
-    : '';
+  const image =
+    safeUrl
 
-  const image = safeUrl
-
-    ? `
-      <a
-        href="${safeUrl}"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-
-        <img
-          src="${safeUrl}"
-          alt="Scrin screenshot at ${escapeHtml(time)}"
-          loading="lazy"
-          referrerpolicy="no-referrer"
-          style="
-            width:100%;
-            height:100%;
-            object-fit:cover;
-            display:block;
-          "
-          onerror="
-            this.style.display='none';
-            this.parentElement.innerHTML=
-            '<div class=&quot;empty&quot; style=&quot;padding:24px&quot;>
-              Screenshot image could not be loaded.
-              Open the evidence link or use the WGM proxy
-              if Scrin blocks direct image loading.
-            </div>';
-          "
+      ? `
+        <a
+          href="${safeUrl}"
+          target="_blank"
+          rel="noopener noreferrer"
         >
 
-      </a>
-      `
+          <img
+            src="${safeUrl}"
+            alt="Scrin screenshot at ${escapeHtml(time)}"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            style="
+              width:100%;
+              height:100%;
+              object-fit:cover;
+              display:block;
+            "
+            onerror="
+              this.style.display='none';
+              this.parentElement.innerHTML=
+              '<div class=&quot;empty&quot; style=&quot;padding:24px&quot;>
+                Screenshot image could not be loaded.
+                Open the evidence link or use the WGM proxy
+                if Scrin blocks direct image loading.
+              </div>';
+            "
+          >
 
-    : `
-      <div class="mock-window">
+        </a>
+        `
 
-        <div class="mock-side"></div>
+      : `
+        <div class="mock-window">
 
-        <div class="mock-main">
+          <div class="mock-side"></div>
 
-          <div class="mock-line"></div>
+          <div class="mock-main">
 
-          <div class="mock-line short"></div>
+            <div class="mock-line"></div>
 
-          <div class="mock-line"></div>
+            <div class="mock-line short"></div>
 
-          <div class="mock-line"></div>
+            <div class="mock-line"></div>
 
-          <div class="mock-line short"></div>
+            <div class="mock-line"></div>
+
+            <div class="mock-line short"></div>
+
+          </div>
 
         </div>
-
-      </div>
-      `;
-
+        `;
 
   return `
     <div class="shot">
@@ -1470,11 +2459,6 @@ function shot(time, app, level, imageUrl){
   `;
 }
 
-
-/* ==========================================================
-   CONTEXT
-   ========================================================== */
-
 function contextView(e){
 
   return `
@@ -1494,7 +2478,7 @@ function contextView(e){
 
           <input
             id="contextEmployer"
-            value="${escapeHtml(e.employer || '')}"
+            value="${escapeHtml(e.employer||'')}"
           >
 
         </div>
@@ -1510,7 +2494,7 @@ function contextView(e){
             type="number"
             min="0"
             step="0.5"
-            value="${Number(e.expectedHours || 0)}"
+            value="${Number(e.expectedHours||0)}"
           >
 
         </div>
@@ -1523,7 +2507,7 @@ function contextView(e){
 
           <input
             id="contextTimezone"
-            value="${escapeHtml(e.timezone || '')}"
+            value="${escapeHtml(e.timezone||'')}"
           >
 
         </div>
@@ -1536,13 +2520,12 @@ function contextView(e){
 
           <input
             id="contextSchedule"
-            value="${escapeHtml(e.schedule || '')}"
+            value="${escapeHtml(e.schedule||'')}"
           >
 
         </div>
 
       </div>
-
 
       <div>
 
@@ -1557,7 +2540,7 @@ function contextView(e){
           </label>
 
           <textarea id="contextText">${
-            escapeHtml(e.context || '')
+            escapeHtml(e.context||'')
           }</textarea>
 
         </div>
@@ -1574,11 +2557,6 @@ function contextView(e){
     </div>
   `;
 }
-
-
-/* ==========================================================
-   REPORT CENTER
-   ========================================================== */
 
 function reports(){
 
@@ -1608,7 +2586,6 @@ function reports(){
 
     </div>
 
-
     <div class="card panel">
 
       <div class="panel-title">
@@ -1620,7 +2597,6 @@ function reports(){
         AI drafts interpretation.
         Human review is required before release.
       </div>
-
 
       <div class="toolbar">
 
@@ -1638,7 +2614,6 @@ function reports(){
 
         </div>
 
-
         <div class="field">
 
           <label>
@@ -1652,7 +2627,6 @@ function reports(){
           >
 
         </div>
-
 
         <div class="field">
 
@@ -1668,16 +2642,14 @@ function reports(){
                 <option
                   value="${escapeHtml(x.id)}"
                   ${
-                    x.id === state.selectedEmployeeId
+                    x.id===state.selectedEmployeeId
                       ? 'selected'
                       : ''
                   }
                 >
-
                   ${escapeHtml(x.name)}
                   —
-                  ${escapeHtml(x.employer || 'Unassigned')}
-
+                  ${escapeHtml(x.employer||'Unassigned')}
                 </option>
                 `
               ).join('')
@@ -1691,9 +2663,7 @@ function reports(){
 
         </div>
 
-
         <div class="spacer"></div>
-
 
         <button
           id="generateBtn"
@@ -1705,7 +2675,6 @@ function reports(){
       </div>
 
     </div>
-
 
     <div
       class="card panel"
@@ -1720,10 +2689,10 @@ function reports(){
         Use this before scaling to the full WGH VA pool.
       </div>
 
-
       <table>
 
         <thead>
+
           <tr>
             <th>Employee</th>
             <th>Employer</th>
@@ -1732,6 +2701,7 @@ function reports(){
             <th>Human review</th>
             <th>Release</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -1746,7 +2716,7 @@ function reports(){
                 </td>
 
                 <td>
-                  ${escapeHtml(x.employer || 'Unassigned')}
+                  ${escapeHtml(x.employer||'Unassigned')}
                 </td>
 
                 <td>
@@ -1754,7 +2724,7 @@ function reports(){
                   <span class="status green">
                     <span class="dot"></span>
                     ${
-                      state.mode === 'LIVE'
+                      state.mode==='LIVE'
                         ? 'Scrin'
                         : 'Demo'
                     }
@@ -1765,11 +2735,13 @@ function reports(){
 
                 <td>
 
-                  <span class="status ${
-                    /review/i.test(x.reportingStatus)
-                      ? 'amber'
-                      : 'green'
-                  }">
+                  <span
+                    class="status ${
+                      /review/i.test(x.reportingStatus)
+                        ? 'amber'
+                        : 'green'
+                    }"
+                  >
 
                     <span class="dot"></span>
 
@@ -1788,17 +2760,14 @@ function reports(){
                 <td>
 
                   ${
-                    state.reportEmployeeId === x.id
+                    state.reportEmployeeId===x.id
 
                       ? `
-                        <span class="status ${
-                          statusClass(state.reportStatus)
-                        }">
-
+                        <span
+                          class="status ${statusClass(state.reportStatus)}"
+                        >
                           <span class="dot"></span>
-
                           ${escapeHtml(state.reportStatus)}
-
                         </span>
                         `
 
@@ -1810,8 +2779,9 @@ function reports(){
                 <td>
 
                   ${
-                    state.reportEmployeeId === x.id &&
-                    state.reportStatus === 'Released'
+                    state.reportEmployeeId===x.id
+                    &&
+                    state.reportStatus==='Released'
 
                       ? `
                         <span class="status green">
@@ -1840,11 +2810,6 @@ function reports(){
   );
 }
 
-
-/* ==========================================================
-   HUMAN REVIEW
-   ========================================================== */
-
 function review(){
 
   const e =
@@ -1863,20 +2828,52 @@ function review(){
         </h2>
 
         <p>
-          Validate the report against the VA's actual schedule,
-          context and Scrin evidence.
+          Green reports may be batch approved;
+          Yellow and Red require individual review.
         </p>
+
+      </div>
+
+      <div class="actions">
+
+        <button
+          class="btn"
+          id="batchGreen"
+        >
+          Approve eligible Greens
+        </button>
+
+        <button
+          class="btn primary"
+          data-page="reports"
+        >
+          Generate report
+        </button>
 
       </div>
 
     </div>
 
+    <div
+      class="card panel"
+      style="margin-bottom:16px"
+    >
+
+      <div class="panel-title">
+        Queue
+      </div>
+
+      ${reviewQueueTable()}
+
+    </div>
+
     ${
-      state.reportStatus === 'Not generated'
+      state.reportStatus==='Not generated'
 
         ? `
           <div class="card empty">
-            Generate a report from the Reports screen first.
+            Select or generate an employee report
+            to open the full review console.
           </div>
           `
 
@@ -1887,7 +2884,6 @@ function review(){
   );
 }
 
-
 function reviewConsole(e){
 
   const r =
@@ -1895,7 +2891,8 @@ function reviewConsole(e){
     ||
     defaultReport;
 
-  const cov = coverage(e);
+  const cov =
+    coverage(e);
 
   return `
     <div class="card panel">
@@ -1905,7 +2902,9 @@ function reviewConsole(e){
         <div class="employee-avatar">
           ${
             escapeHtml(
-              e.initials || initials(e.name)
+              e.initials
+              ||
+              initials(e.name)
             )
           }
         </div>
@@ -1919,7 +2918,7 @@ function reviewConsole(e){
           </h2>
 
           <div class="small">
-            ${escapeHtml(e.employer || 'Unassigned')}
+            ${escapeHtml(e.employer||'Unassigned')}
           </div>
 
         </div>
@@ -1927,12 +2926,14 @@ function reviewConsole(e){
         <div class="spacer"></div>
 
         <span class="status ${statusClass(state.reportStatus)}">
+
           <span class="dot"></span>
+
           ${escapeHtml(state.reportStatus)}
+
         </span>
 
       </div>
-
 
       <div class="review-summary">
 
@@ -1943,26 +2944,25 @@ function reviewConsole(e){
 
         <div class="review-stat">
           <div class="k">Expected</div>
-          <div class="v">${e.expectedHours || '—'}h</div>
+          <div class="v">${e.expectedHours||'—'}h</div>
         </div>
 
         <div class="review-stat">
           <div class="k">Coverage</div>
-          <div class="v">${cov ?? '—'}%</div>
+          <div class="v">${cov??'—'}%</div>
         </div>
 
         <div class="review-stat">
           <div class="k">Active days</div>
-          <div class="v">${e.activeDays || '—'}</div>
+          <div class="v">${e.activeDays||'—'}</div>
         </div>
 
         <div class="review-stat">
           <div class="k">Review flags</div>
-          <div class="v">${e.concerns || 0}</div>
+          <div class="v">${e.concerns||0}</div>
         </div>
 
       </div>
-
 
       <div class="grid two-col">
 
@@ -2001,7 +3001,6 @@ function reviewConsole(e){
           </div>
 
         </div>
-
 
         <div>
 
@@ -2043,7 +3042,6 @@ function reviewConsole(e){
 
           </div>
 
-
           <div class="actions">
 
             <button class="btn">
@@ -2067,7 +3065,6 @@ function reviewConsole(e){
 
       </div>
 
-
       ${
         /Approved|Released/.test(state.reportStatus)
 
@@ -2079,8 +3076,8 @@ function reviewConsole(e){
               </strong>
 
               Clicking release will lock this WGM report
-              and create the future CRM delivery event for
-              ${escapeHtml(e.employer || 'the employer')}.
+              and create the future CRM delivery event
+              for ${escapeHtml(e.employer||'the employer')}.
 
             </div>
 
@@ -2097,13 +3094,11 @@ function reviewConsole(e){
                 class="btn primary"
                 id="releaseBtn"
               >
-
                 ${
-                  state.reportStatus === 'Released'
+                  state.reportStatus==='Released'
                     ? 'Released · Delivery queued'
                     : 'Approve & Release'
                 }
-
               </button>
 
             </div>
@@ -2116,12 +3111,13 @@ function reviewConsole(e){
   `;
 }
 
-
 function periodLabel(){
 
   const f =
     new Date(
-      state.reportPeriod.from + 'T00:00:00Z'
+      state.reportPeriod.from
+      +
+      'T00:00:00Z'
     );
 
   return f.toLocaleString(
@@ -2134,12 +3130,183 @@ function periodLabel(){
   );
 }
 
-
-/* ==========================================================
-   SUBSCRIPTIONS
-   ========================================================== */
-
 function subscriptions(){
+
+  if(state.role === 'employer'){
+
+    const team =
+      portalEmployees();
+
+    return shell(
+      `
+      <div class="header-row">
+
+        <div>
+
+          <h2>
+            Billing
+          </h2>
+
+          <p>
+            Prototype of the Stripe-backed customer billing
+            entry point described in the RFP.
+          </p>
+
+        </div>
+
+        <button class="btn primary">
+          Manage payment method
+        </button>
+
+      </div>
+
+      <div class="grid metrics">
+
+        ${
+          metric(
+            'Plan',
+            'WGM Monthly',
+            'Configurable in Stripe'
+          )
+        }
+
+        ${
+          metric(
+            'Paid seats',
+            Math.max(team.length,1),
+            'Contracted capacity'
+          )
+        }
+
+        ${
+          metric(
+            'Billing status',
+            'Active',
+            'Prototype state'
+          )
+        }
+
+        ${
+          metric(
+            'Next renewal',
+            'Oct 1, 2026',
+            'Hosted billing'
+          )
+        }
+
+      </div>
+
+      <div class="grid two-col">
+
+        <div class="card panel">
+
+          <div class="panel-title">
+            Subscription
+          </div>
+
+          <table>
+
+            <tbody>
+
+              <tr>
+                <th>Organization</th>
+                <td>${escapeHtml(state.portalEmployer||'Employer')}</td>
+              </tr>
+
+              <tr>
+                <th>Assigned employees</th>
+                <td>${team.length}</td>
+              </tr>
+
+              <tr>
+                <th>Payment method</th>
+                <td>•••• 4242</td>
+              </tr>
+
+              <tr>
+                <th>Cancellation</th>
+                <td>Not scheduled</td>
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+        <div class="card panel">
+
+          <div class="panel-title">
+            Invoice history
+          </div>
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Status</th>
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              <tr>
+
+                <td>
+                  WGM-0003
+                </td>
+
+                <td>
+                  Sep 1, 2026
+                </td>
+
+                <td>
+
+                  <span class="status green">
+                    <span class="dot"></span>
+                    Paid
+                  </span>
+
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <td>
+                  WGM-0002
+                </td>
+
+                <td>
+                  Aug 1, 2026
+                </td>
+
+                <td>
+
+                  <span class="status green">
+                    <span class="dot"></span>
+                    Paid
+                  </span>
+
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+      `,
+      'Billing'
+    );
+  }
 
   return shell(
     `
@@ -2152,26 +3319,27 @@ function subscriptions(){
         </h2>
 
         <p>
-          Billing lifecycle is modeled now;
-          payment processing remains outside this prototype.
+          Prototype states for included WGH seats
+          and future standalone paid organizations.
         </p>
 
       </div>
 
     </div>
 
-
     <div class="card panel">
 
       <table>
 
         <thead>
+
           <tr>
             <th>Company</th>
-            <th>Source</th>
-            <th>Plan</th>
-            <th>Payment state</th>
+            <th>Entitlement</th>
+            <th>Seats</th>
+            <th>Lifecycle state</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -2179,51 +3347,64 @@ function subscriptions(){
           ${
             [
               ...new Set(
-                state.employees.map(e => e.employer)
+                state.employees
+                  .map(e=>e.employer)
+                  .filter(Boolean)
               )
             ]
             .map(
-              (c,i) => `
-              <tr>
+              (c,i) => {
 
-                <td>
-                  ${escapeHtml(c)}
-                </td>
+                const count =
+                  state.employees.filter(
+                    e =>
+                      e.employer===c
+                  ).length;
 
-                <td>
-                  WGH Managed
-                </td>
+                return `
+                  <tr>
 
-                <td>
-                  ${
-                    i === 0
-                      ? 'Included'
-                      : 'Prototype'
-                  }
-                </td>
+                    <td>
+                      ${escapeHtml(c)}
+                    </td>
 
-                <td>
+                    <td>
+                      ${
+                        i===0
+                          ? 'WGH Included'
+                          : 'Standalone Paid'
+                      }
+                    </td>
 
-                  <span class="status ${
-                    i === 0
-                      ? 'green'
-                      : 'blue'
-                  }">
+                    <td>
+                      ${count}
+                    </td>
 
-                    <span class="dot"></span>
+                    <td>
 
-                    ${
-                      i === 0
-                        ? 'Active'
-                        : 'Not connected'
-                    }
+                      <span
+                        class="status ${
+                          i===0
+                            ? 'green'
+                            : 'blue'
+                        }"
+                      >
 
-                  </span>
+                        <span class="dot"></span>
 
-                </td>
+                        ${
+                          i===0
+                            ? 'Active · Included'
+                            : 'Active · Paid'
+                        }
 
-              </tr>
-              `
+                      </span>
+
+                    </td>
+
+                  </tr>
+                `;
+              }
             )
             .join('')
           }
@@ -2233,15 +3414,44 @@ function subscriptions(){
       </table>
 
     </div>
+
+    <div
+      class="grid two-col"
+      style="margin-top:16px"
+    >
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          Billing lifecycle states
+        </div>
+
+        <p class="small">
+          Invited → Payment pending → Active → Past due →
+          Grace period → Suspended → Cancelled → Payment recovered.
+        </p>
+
+      </div>
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          Entitlement rule
+        </div>
+
+        <p class="small">
+          Included WGH seats remain independent of paid Stripe
+          entitlements and should never be silently converted
+          to a paid subscription.
+        </p>
+
+      </div>
+
+    </div>
     `,
     'Subscriptions'
   );
 }
-
-
-/* ==========================================================
-   SETTINGS
-   ========================================================== */
 
 function settings(){
 
@@ -2265,9 +3475,7 @@ function settings(){
 
     </div>
 
-
     <div class="grid two-col">
-
 
       <div class="card panel">
 
@@ -2276,22 +3484,14 @@ function settings(){
         </div>
 
         <div class="panel-sub">
-          One server-side connection
-          for the three-VA test account.
+          One server-side connection for the three-VA test account.
         </div>
 
         <p class="small">
-
           Token stays in the Cloudflare Worker secret
-
-          <b>
-            SCRIN_TOKEN
-          </b>.
-
+          <b>SCRIN_TOKEN</b>.
           It never goes into browser code or GitHub.
-
         </p>
-
 
         <div class="actions">
 
@@ -2311,7 +3511,6 @@ function settings(){
 
         </div>
 
-
         <div
           id="scrinResult"
           class="small"
@@ -2322,7 +3521,6 @@ function settings(){
 
       </div>
 
-
       <div class="card panel">
 
         <div class="panel-title">
@@ -2330,27 +3528,15 @@ function settings(){
         </div>
 
         <div class="panel-sub">
-          Structured narrative from verified
-          WGM calculations and context.
+          Structured narrative from verified WGM calculations and context.
         </div>
 
         <p class="small">
-
           Set
-
-          <b>
-            OPENAI_API_KEY
-          </b>
-
+          <b>OPENAI_API_KEY</b>
           and
-
-          <b>
-            OPENAI_MODEL
-          </b>
-
-          as server-side configuration
-          when you are ready for live AI generation.
-
+          <b>OPENAI_MODEL</b>
+          as server-side configuration when you are ready for live AI generation.
         </p>
 
         <span class="status blue">
@@ -2361,7 +3547,6 @@ function settings(){
       </div>
 
     </div>
-
 
     <div
       class="card panel"
@@ -2377,10 +3562,10 @@ function settings(){
         because the VAs work for different employers.
       </div>
 
-
       <table>
 
         <thead>
+
           <tr>
             <th>Scrin person</th>
             <th>Employment ID</th>
@@ -2388,6 +3573,7 @@ function settings(){
             <th>WGM employer</th>
             <th>Expected monthly hours</th>
           </tr>
+
         </thead>
 
         <tbody>
@@ -2402,11 +3588,11 @@ function settings(){
                 </td>
 
                 <td>
-                  ${escapeHtml(e.employmentId || '—')}
+                  ${escapeHtml(e.employmentId||'—')}
                 </td>
 
                 <td>
-                  ${escapeHtml(e.scrinCompany || '—')}
+                  ${escapeHtml(e.scrinCompany||'—')}
                 </td>
 
                 <td>
@@ -2414,7 +3600,7 @@ function settings(){
                   <input
                     class="map-input"
                     data-map-employer="${escapeHtml(e.id)}"
-                    value="${escapeHtml(e.employer || '')}"
+                    value="${escapeHtml(e.employer||'')}"
                   >
 
                 </td>
@@ -2427,7 +3613,7 @@ function settings(){
                     type="number"
                     min="0"
                     step="0.5"
-                    value="${Number(e.expectedHours || 0)}"
+                    value="${Number(e.expectedHours||0)}"
                   >
 
                 </td>
@@ -2440,7 +3626,6 @@ function settings(){
         </tbody>
 
       </table>
-
 
       <div
         class="actions"
@@ -2458,12 +3643,10 @@ function settings(){
 
     </div>
 
-
     <div
       class="grid two-col"
       style="margin-top:16px"
     >
-
 
       <div class="card panel">
 
@@ -2476,19 +3659,12 @@ function settings(){
         </div>
 
         <p class="small">
-
           Future trigger:
-
           WGM report changes
-
-          <b>
-            Approved → Released
-          </b>.
-
+          <b>Approved → Released</b>.
           Payload will include employer,
           contact, reporting period
           and secure report link.
-
         </p>
 
         <span class="status amber">
@@ -2497,7 +3673,6 @@ function settings(){
         </span>
 
       </div>
-
 
       <div class="card panel">
 
@@ -2510,11 +3685,8 @@ function settings(){
         </div>
 
         <p class="small">
-
-          Trial, active, past-due
-          and cancelled states are retained
-          in the product architecture.
-
+          Trial, active, past-due and cancelled states
+          are retained in the product architecture.
         </p>
 
         <span class="status amber">
@@ -2530,10 +3702,244 @@ function settings(){
   );
 }
 
+function dataSources(){
 
-/* ==========================================================
-   REPORT PREVIEW
-   ========================================================== */
+  return shell(
+    `
+    <div class="header-row">
+
+      <div>
+
+        <h2>
+          Data Sources
+        </h2>
+
+        <p>
+          WGM normalizes evidence before analysis so the reporting
+          and review engine does not depend on a single capture vendor.
+        </p>
+
+      </div>
+
+      <span class="status green">
+        <span class="dot"></span>
+        Provider-independent architecture
+      </span>
+
+    </div>
+
+    <div class="grid two-col">
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          Scrin.io
+        </div>
+
+        <div class="panel-sub">
+          Current production-style capture source for the prototype.
+        </div>
+
+        <table>
+
+          <tbody>
+
+            <tr>
+
+              <th>
+                Status
+              </th>
+
+              <td>
+
+                <span class="status green">
+                  <span class="dot"></span>
+                  ${
+                    state.mode==='LIVE'
+                      ? 'Connected'
+                      : 'Configured'
+                  }
+                </span>
+
+              </td>
+
+            </tr>
+
+            <tr>
+              <th>Employees</th>
+              <td>${state.employees.length}</td>
+            </tr>
+
+            <tr>
+              <th>Capabilities</th>
+              <td>Time · activities · screenshots · apps/URLs · projects</td>
+            </tr>
+
+            <tr>
+              <th>Connection</th>
+              <td>Server-side X-SSM token</td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+      <div class="card panel">
+
+        <div class="panel-title">
+          WGM Native Monitor
+        </div>
+
+        <div class="panel-sub">
+          Future White Glove-owned Windows/macOS capture application.
+        </div>
+
+        <table>
+
+          <tbody>
+
+            <tr>
+
+              <th>
+                Status
+              </th>
+
+              <td>
+
+                <span class="status amber">
+                  <span class="dot"></span>
+                  Planned
+                </span>
+
+              </td>
+
+            </tr>
+
+            <tr>
+              <th>Output contract</th>
+              <td>Same normalized WGM evidence model</td>
+            </tr>
+
+            <tr>
+              <th>Report changes required</th>
+              <td>None intended</td>
+            </tr>
+
+            <tr>
+              <th>Review workflow changes</th>
+              <td>None intended</td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+    <div
+      class="card panel"
+      style="margin-top:16px"
+    >
+
+      <div class="panel-title">
+        Evidence contract
+      </div>
+
+      <div class="panel-sub">
+        Every provider maps into these WGM-owned fields before analysis.
+      </div>
+
+      <div class="grid metrics">
+
+        ${
+          metric(
+            'Tenant',
+            'Company ID',
+            'Isolation boundary'
+          )
+        }
+
+        ${
+          metric(
+            'Employee',
+            'WGM employee ID',
+            'Identity mapping'
+          )
+        }
+
+        ${
+          metric(
+            'Evidence',
+            'Source + external ID',
+            'Provenance'
+          )
+        }
+
+        ${
+          metric(
+            'Time',
+            'Capture/event timestamp',
+            'Assigned timezone'
+          )
+        }
+
+      </div>
+
+      <div
+        class="banner"
+        style="margin-top:16px"
+      >
+
+        <div>
+
+          <div
+            class="big"
+            style="font-size:20px"
+          >
+            Scrin today → WGM Evidence Layer → Analysis →
+            AI Draft → Human Review → Employer Report
+          </div>
+
+          <div class="muted">
+            Later: WGM Native Monitor plugs into the same evidence layer.
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div
+      class="card panel"
+      style="margin-top:16px"
+    >
+
+      <div class="panel-title">
+        Synthetic second-source test
+      </div>
+
+      <p class="small">
+        The RFP requires a second synthetic source to prove the report engine
+        is not hard-wired to Scrin. For the prototype, this can be a fixture
+        that emits normalized time/activity/screenshot records under
+        a fictitious source name.
+      </p>
+
+      <span class="status blue">
+        <span class="dot"></span>
+        Prototype next step
+      </span>
+
+    </div>
+    `,
+    'Data Sources'
+  );
+}
 
 function reportPreview(){
 
@@ -2563,7 +3969,6 @@ function reportPreview(){
 
       </div>
 
-
       <div class="actions">
 
         <button
@@ -2583,7 +3988,6 @@ function reportPreview(){
       </div>
 
     </div>
-
 
     <article class="report-paper print-target">
 
@@ -2608,7 +4012,7 @@ function reportPreview(){
           Human reviewed |
 
           ${
-            state.reportStatus === 'Released'
+            state.reportStatus==='Released'
               ? 'Released'
               : 'Approved'
           }
@@ -2617,11 +4021,9 @@ function reportPreview(){
 
       </div>
 
-
       <div class="report-kicker">
         Monthly Workforce Accountability Report
       </div>
-
 
       <div class="report-title">
         ${escapeHtml(e.name)}
@@ -2629,11 +4031,9 @@ function reportPreview(){
         ${periodLabel()}
       </div>
 
-
       <div class="small">
-        Prepared for ${escapeHtml(e.employer || 'Employer')}
+        Prepared for ${escapeHtml(e.employer||'Employer')}
       </div>
-
 
       <div class="report-grid">
 
@@ -2643,22 +4043,21 @@ function reportPreview(){
         </div>
 
         <div class="report-metric">
-          <b>${coverage(e) ?? '—'}%</b>
+          <b>${coverage(e)??'—'}%</b>
           <span class="small">Schedule coverage</span>
         </div>
 
         <div class="report-metric">
-          <b>${e.activeDays || '—'}</b>
+          <b>${e.activeDays||'—'}</b>
           <span class="small">Active workdays</span>
         </div>
 
         <div class="report-metric">
-          <b>${e.concerns || 0}</b>
+          <b>${e.concerns||0}</b>
           <span class="small">Review flags</span>
         </div>
 
       </div>
-
 
       <h3 class="section-title">
         Executive overview
@@ -2669,16 +4068,14 @@ function reportPreview(){
         ${escapeHtml(r.summary)}
       </p>
 
-
       <h3 class="section-title">
         What matters this month
       </h3>
 
-
       <div class="report-list">
 
         ${
-          (r.strengths || [])
+          (r.strengths||[])
             .map(
               x => `
               <div class="report-item">
@@ -2691,26 +4088,26 @@ function reportPreview(){
 
       </div>
 
-
       <h3 class="section-title">
         Weekly coverage & observed work
       </h3>
 
-
       <table>
 
         <thead>
+
           <tr>
             <th>Week</th>
             <th>Accountable time</th>
             <th>Observed work</th>
           </tr>
+
         </thead>
 
         <tbody>
 
           ${
-            (e.weeks || [])
+            (e.weeks||[])
               .map(
                 w => `
                 <tr>
@@ -2727,45 +4124,40 @@ function reportPreview(){
 
       </table>
 
-
       <h3 class="section-title">
         Work categories
       </h3>
 
       ${
-        (e.workstreams || [])
+        (e.workstreams||[])
           .map(
-            x => mixBar(
-              x[0],
-              x[1]
-            )
+            x =>
+              mixBar(
+                x[0],
+                x[1]
+              )
           )
           .join('')
       }
 
-
       <h3 class="section-title">
         Human review & next focus
       </h3>
-
 
       <p>
         <b>Client context:</b>
         ${escapeHtml(r.clientContext)}
       </p>
 
-
       <p>
         <b>Coaching:</b>
         ${escapeHtml(r.coaching)}
       </p>
 
-
       <p>
         <b>Next-month focus:</b>
         ${escapeHtml(r.nextFocus)}
       </p>
-
 
       <div class="callout">
 
@@ -2775,11 +4167,9 @@ function reportPreview(){
 
         Time tracking and screenshots are evidence inputs,
         not standalone performance verdicts.
-        Material conclusions remain human-reviewed
-        before release.
+        Material conclusions remain human-reviewed before release.
 
       </div>
-
 
       <div class="report-footer">
 
@@ -2788,7 +4178,7 @@ function reportPreview(){
         </span>
 
         <span>
-          Prototype V1.1
+          Prototype V1.2
         </span>
 
       </div>
@@ -2799,14 +4189,10 @@ function reportPreview(){
   );
 }
 
-
-/* ==========================================================
-   SCRIN SYNC
-   ========================================================== */
-
 async function syncScrin(){
 
-  state.syncMessage = 'Syncing Scrin…';
+  state.syncMessage =
+    'Syncing Scrin…';
 
   render();
 
@@ -2824,13 +4210,13 @@ async function syncScrin(){
       await r.json();
 
     if(!r.ok){
+
       throw new Error(
         j.error
         ||
         'Scrin connection failed'
       );
     }
-
 
     if(
       Array.isArray(j.employees)
@@ -2847,7 +4233,6 @@ async function syncScrin(){
             ]
           )
         );
-
 
       state.employees =
         j.employees.map(
@@ -2945,19 +4330,15 @@ async function syncScrin(){
           }
         );
 
-
       state.selectedEmployeeId =
         state.employees[0].id;
 
-
       saveEmployees();
-
 
       state.mode =
         j.demo
           ? 'DEMO'
           : 'LIVE';
-
 
       state.syncMessage =
         `Connected. ${state.employees.length} employment record(s) loaded from Scrin.`;
@@ -2977,14 +4358,14 @@ async function syncScrin(){
   render();
 }
 
-
 async function testScrin(){
 
   const el =
     document.getElementById('scrinResult');
 
   if(el){
-    el.textContent = 'Testing…';
+    el.textContent =
+      'Testing…';
   }
 
   try{
@@ -2993,7 +4374,6 @@ async function testScrin(){
       await fetch('/api/health');
 
     await r.json();
-
 
     const c =
       await fetch(
@@ -3006,8 +4386,8 @@ async function testScrin(){
     const j =
       await c.json();
 
-
     if(!c.ok){
+
       throw new Error(
         j.error
         ||
@@ -3015,58 +4395,52 @@ async function testScrin(){
       );
     }
 
-
     state.mode =
       j.demo
         ? 'DEMO'
         : 'LIVE';
 
-
     state.syncMessage =
-      `${state.mode} connection responding. ${j.employees?.length || 0} employment record(s) available.`;
-
+      `${state.mode} connection responding. ${j.employees?.length||0} employment record(s) available.`;
 
     render();
 
   }catch(e){
 
     if(el){
+
       el.textContent =
         `Not connected: ${e.message}`;
     }
   }
 }
 
-
-/* ==========================================================
-   REPORT GENERATION
-   ========================================================== */
-
 async function generateReport(){
 
   const select =
     document.getElementById('reportEmployee');
-
 
   const id =
     select?.value
     ||
     state.selectedEmployeeId;
 
-
   state.reportPeriod = {
 
     from:
-      document.getElementById('fromDate')?.value
+      document
+        .getElementById('fromDate')
+        ?.value
       ||
       state.reportPeriod.from,
 
     to:
-      document.getElementById('toDate')?.value
+      document
+        .getElementById('toDate')
+        ?.value
       ||
       state.reportPeriod.to
   };
-
 
   if(id === '__ALL__'){
 
@@ -3077,24 +4451,19 @@ async function generateReport(){
     return;
   }
 
-
-  state.selectedEmployeeId = id;
-
+  state.selectedEmployeeId =
+    id;
 
   const e =
     employee();
 
-
   state.reportEmployeeId =
     e.id;
-
 
   state.reportStatus =
     'Generating';
 
-
   render();
-
 
   try{
 
@@ -3102,7 +4471,6 @@ async function generateReport(){
       employee:e,
       period:state.reportPeriod
     };
-
 
     if(
       state.mode === 'LIVE'
@@ -3124,17 +4492,15 @@ async function generateReport(){
               employmentId:e.employmentId,
               from:state.reportPeriod.from,
               to:state.reportPeriod.to,
-              timezoneOffsetMinutes:e.timezoneOffsetMinutes || 0,
-              expectedHours:Number(e.expectedHours || 0),
+              timezoneOffsetMinutes:e.timezoneOffsetMinutes||0,
+              expectedHours:Number(e.expectedHours||0),
               includeScreenshots:true
             })
           }
         );
 
-
       const p =
         await periodRes.json();
-
 
       if(!periodRes.ok){
 
@@ -3145,35 +4511,28 @@ async function generateReport(){
         );
       }
 
-
       e.trackedHours =
         p.metrics.trackedHours;
 
-
       e.activeDays =
         p.metrics.activeDays;
-
 
       e.workstreams =
         p.workstreams
         ||
         e.workstreams;
 
-
       e.apps =
         p.apps
         ||
         e.apps;
-
 
       e.shots =
         p.screenshotPreview
         ||
         e.shots;
 
-
       saveEmployees();
-
 
       verified = {
         ...verified,
@@ -3184,7 +4543,6 @@ async function generateReport(){
         screenshotEvidence:p.screenshotEvidenceSummary
       };
     }
-
 
     const res =
       await fetch(
@@ -3198,19 +4556,16 @@ async function generateReport(){
 
           body:JSON.stringify({
             ...verified,
-
             benchmark:
-              e.id === 'demo-maria'
+              e.id==='demo-maria'
                 ? defaultReport
                 : null
           })
         }
       );
 
-
     const data =
       await res.json();
-
 
     if(!res.ok){
 
@@ -3220,7 +4575,6 @@ async function generateReport(){
         'AI generation unavailable'
       );
     }
-
 
     state.report =
       data.report
@@ -3232,38 +4586,29 @@ async function generateReport(){
     state.report =
       defaultReport;
 
-
     toast(
       `Using prototype narrative: ${err.message}`
     );
   }
 
-
   state.reportStatus =
     'Draft ready';
-
 
   state.page =
     'review';
 
-
   render();
 }
-
-
-/* ==========================================================
-   LOAD LIVE SCRIN DAY
-   ========================================================== */
 
 async function loadLiveDay(){
 
   const e =
     employee();
 
-
   const d =
-    document.getElementById('screenDate')?.value;
-
+    document
+      .getElementById('screenDate')
+      ?.value;
 
   if(state.mode !== 'LIVE'){
 
@@ -3274,17 +4619,14 @@ async function loadLiveDay(){
     return;
   }
 
-
   const area =
     document.getElementById('shotArea');
-
 
   if(area){
 
     area.innerHTML =
       '<div class="empty">Loading Scrin evidence…</div>';
   }
-
 
   try{
 
@@ -3302,17 +4644,15 @@ async function loadLiveDay(){
             employmentId:e.employmentId,
             from:d,
             to:d,
-            timezoneOffsetMinutes:e.timezoneOffsetMinutes || 0,
+            timezoneOffsetMinutes:e.timezoneOffsetMinutes||0,
             expectedHours:8,
             includeScreenshots:true
           })
         }
       );
 
-
     const p =
       await r.json();
-
 
     if(!r.ok){
 
@@ -3323,15 +4663,12 @@ async function loadLiveDay(){
       );
     }
 
-
     e.shots =
       p.screenshotPreview
       ||
       [];
 
-
     saveEmployees();
-
 
     render();
 
@@ -3342,11 +4679,6 @@ async function loadLiveDay(){
     );
   }
 }
-
-
-/* ==========================================================
-   SAVE MAPPINGS / CONTEXT
-   ========================================================== */
 
 function saveMappings(){
 
@@ -3361,12 +4693,12 @@ function saveMappings(){
           );
 
         if(e){
+
           e.employer =
             el.value.trim();
         }
       }
     );
-
 
   document
     .querySelectorAll('[data-map-hours]')
@@ -3379,29 +4711,24 @@ function saveMappings(){
           );
 
         if(e){
+
           e.expectedHours =
-            Number(
-              el.value || 0
-            );
+            Number(el.value||0);
         }
       }
     );
 
-
   saveEmployees();
-
 
   toast(
     'WGM employer mappings saved in this prototype browser.'
   );
 }
 
-
 function saveContext(){
 
   const e =
     employee();
-
 
   e.employer =
     document
@@ -3410,7 +4737,6 @@ function saveContext(){
       .trim()
     ||
     e.employer;
-
 
   e.expectedHours =
     Number(
@@ -3423,7 +4749,6 @@ function saveContext(){
       0
     );
 
-
   e.timezone =
     document
       .getElementById('contextTimezone')
@@ -3431,7 +4756,6 @@ function saveContext(){
       .trim()
     ||
     e.timezone;
-
 
   e.schedule =
     document
@@ -3441,7 +4765,6 @@ function saveContext(){
     ||
     e.schedule;
 
-
   e.context =
     document
       .getElementById('contextText')
@@ -3450,24 +4773,17 @@ function saveContext(){
     ||
     '';
 
-
   saveEmployees();
-
 
   toast(
     'Employee baseline and context saved.'
   );
 }
 
-
-/* ==========================================================
-   RENDER / EVENTS
-   ========================================================== */
-
 function render(){
 
-  let out = '';
-
+  let out =
+    '';
 
   if(state.page === 'dashboard'){
     out = dashboard();
@@ -3501,20 +4817,21 @@ function render(){
     out = settings();
   }
 
+  else if(state.page === 'dataSources'){
+    out = dataSources();
+  }
+
   else if(state.page === 'reportPreview'){
     out = reportPreview();
   }
-
 
   document
     .getElementById('app')
     .innerHTML =
       out;
 
-
   bind();
 }
-
 
 function bind(){
 
@@ -3524,15 +4841,14 @@ function bind(){
       x => {
 
         x.onclick = () => {
+
           state.page =
             x.dataset.page;
 
           render();
         };
-
       }
     );
-
 
   document
     .querySelectorAll('[data-open-id]')
@@ -3552,10 +4868,8 @@ function bind(){
 
           render();
         };
-
       }
     );
-
 
   document
     .querySelectorAll('[data-tab]')
@@ -3569,27 +4883,23 @@ function bind(){
 
           render();
         };
-
       }
     );
 
-
   const se =
     document.getElementById('reportEmployee');
-
 
   if(se){
 
     se.onchange = () => {
 
       if(se.value !== '__ALL__'){
+
         state.selectedEmployeeId =
           se.value;
       }
-
     };
   }
-
 
   const g =
     document.getElementById('generateBtn');
@@ -3599,7 +4909,6 @@ function bind(){
       generateReport;
   }
 
-
   const s =
     document.getElementById('syncScrin');
 
@@ -3607,7 +4916,6 @@ function bind(){
     s.onclick =
       syncScrin;
   }
-
 
   const t =
     document.getElementById('testScrin');
@@ -3617,7 +4925,6 @@ function bind(){
       testScrin;
   }
 
-
   const m =
     document.getElementById('saveMappings');
 
@@ -3625,7 +4932,6 @@ function bind(){
     m.onclick =
       saveMappings;
   }
-
 
   const c =
     document.getElementById('saveContext');
@@ -3635,7 +4941,6 @@ function bind(){
       saveContext;
   }
 
-
   const l =
     document.getElementById('loadLiveDay');
 
@@ -3644,10 +4949,8 @@ function bind(){
       loadLiveDay;
   }
 
-
   const a =
     document.getElementById('approveBtn');
-
 
   if(a){
 
@@ -3664,20 +4967,16 @@ function bind(){
         return;
       }
 
-
       state.reportStatus =
         'Approved';
 
-
       render();
-
 
       toast(
         'Report approved by WGM reviewer.'
       );
     };
   }
-
 
   document
     .querySelectorAll('[data-check]')
@@ -3691,14 +4990,11 @@ function bind(){
           ] =
             x.checked;
         };
-
       }
     );
 
-
   const p =
     document.getElementById('previewReport');
-
 
   if(p){
 
@@ -3711,10 +5007,8 @@ function bind(){
     };
   }
 
-
   const rel =
     document.getElementById('releaseBtn');
-
 
   if(rel){
 
@@ -3731,10 +5025,8 @@ function bind(){
           ||
           employee();
 
-
         state.reportStatus =
           'Released';
-
 
         state.deliveryQueue.push({
           employeeId:e.id,
@@ -3745,33 +5037,74 @@ function bind(){
           status:'queued'
         });
 
-
         render();
-
 
         toast(
           'Released. Future GHL delivery event queued.'
         );
       }
-
     };
   }
 
+  const role =
+    document.getElementById('roleSwitcher');
+
+  if(role){
+
+    role.onchange = () =>
+
+      setRole(
+        role.value
+      );
+  }
+
+  const empSwitch =
+    document.getElementById('employerSwitcher');
+
+  if(empSwitch){
+
+    empSwitch.onchange = () => {
+
+      state.portalEmployer =
+        empSwitch.value;
+
+      localStorage.setItem(
+        'wgmPortalEmployer',
+        state.portalEmployer
+      );
+
+      render();
+    };
+  }
+
+  const batch =
+    document.getElementById('batchGreen');
+
+  if(batch){
+
+    batch.onclick = () => {
+
+      const eligible =
+        state.employees.filter(
+          e =>
+            reviewColor(e)==='Green'
+        ).length;
+
+      toast(
+        `${eligible} Green report(s) selected for batch approval. Yellow/Red reports remain excluded.`
+      );
+    };
+  }
 
   const pr =
     document.getElementById('printReport');
 
-
   if(pr){
+
     pr.onclick =
       () => window.print();
   }
 }
-
-
-/* ==========================================================
-   STARTUP
-   ========================================================== */
 
 async function initializeApp(){
 
@@ -3780,16 +5113,13 @@ async function initializeApp(){
     const response =
       await fetch('/api/health');
 
-
     const health =
       await response.json();
-
 
     state.mode =
       health.mode === 'live'
         ? 'LIVE'
         : 'DEMO';
-
 
     if(state.mode === 'LIVE'){
 
@@ -3805,9 +5135,7 @@ async function initializeApp(){
     );
   }
 
-
   render();
 }
-
 
 initializeApp();
