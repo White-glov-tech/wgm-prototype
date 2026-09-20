@@ -184,4 +184,21 @@ function bind(){
  const rel=document.getElementById('releaseBtn');if(rel)rel.onclick=()=>{if(state.reportStatus!=='Released'){const e=employeeById(state.reportEmployeeId)||employee();state.reportStatus='Released';state.deliveryQueue.push({employeeId:e.id,employer:e.employer,period:{...state.reportPeriod},status:'queued'});render();toast('Released. Future GHL delivery event queued.');}};
  const pr=document.getElementById('printReport');if(pr)pr.onclick=()=>window.print();
 }
-render();
+async function initializeApp() {
+  try {
+    const response = await fetch('/api/health');
+    const health = await response.json();
+
+    state.mode = health.mode === 'live' ? 'LIVE' : 'DEMO';
+
+    if (state.mode === 'LIVE') {
+      state.syncMessage = 'Live Scrin connection configured.';
+    }
+  } catch (error) {
+    console.error('Could not determine WGM connection mode:', error);
+  }
+
+  render();
+}
+
+initializeApp();
