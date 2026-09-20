@@ -7,7 +7,7 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
-DEMO_MODE = "true"
+DEMO_MODE = "false"
 SCRIN_API_BASE_URL = "https://scrin.io"
 # Set OPENAI_MODEL in Cloudflare when enabling live AI generation.
 # Keep API keys/tokens in Wrangler secrets, never here.
