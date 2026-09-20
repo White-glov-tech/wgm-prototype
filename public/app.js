@@ -1,61 +1,181 @@
+/* ==========================================================
+   WHITE GLOVE MONITOR
+   PROTOTYPE V1.5
+   ==========================================================
+
+   Includes:
+   - Multi-Scrin source connections
+   - Dedicated vs WGH Shared connections
+   - Employer isolation
+   - Complete daily screenshot evidence
+   - Workday timeframe / sessions
+   - Monitoring policies
+   - Reviewer workflow
+   - Premium five-page monthly report
+
+   IMPORTANT:
+   API credentials remain server-side.
+   Never place Scrin or OpenAI API keys in this file.
+   ========================================================== */
+
+
+/* ==========================================================
+   STATE
+   ========================================================== */
+
 const state = {
   page: 'dashboard',
   employeeTab: 'overview',
+
   mode: 'DEMO',
+
   employees: [],
   connections: [],
-  selectedEmployeeId: 'demo-maria',
+
+  selectedEmployeeId: '',
+
   reportStatus: 'Not generated',
   report: null,
   reportEmployeeId: null,
-  reviewerChecks: [true,true,true,true,true],
-  reportPeriod: { from: '2026-08-01', to: '2026-08-31' },
+
+  reviewerChecks: [
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+
+  reportPeriod: {
+    from: '2026-08-01',
+    to: '2026-08-31'
+  },
+
   deliveryQueue: [],
+
   toast: null,
-  syncMessage: 'Demo data loaded. Connect Scrin to replace this with live employees.',
-  role: localStorage.getItem('wgmRole') || 'owner',
-  portalEmployer: localStorage.getItem('wgmPortalEmployer') || '',
-  showAddConnection: false,
+
+  syncMessage:
+    'Demo data loaded. Connect Scrin to replace this with live employees.',
+
+  role:
+    localStorage.getItem('wgmRole')
+    ||
+    'owner',
+
+  portalEmployer:
+    localStorage.getItem('wgmPortalEmployer')
+    ||
+    '',
+
+  showAddConnection: false
 };
 
+
+/* ==========================================================
+   DEFAULT REPORT
+   ========================================================== */
+
 const defaultReport = {
-  headline: 'The reporting period shows generally consistent, business-relevant work.',
-  summary: 'Tracked time, workstreams and available evidence were reconciled against the employee baseline and supplied context. No unsupported conclusion has been added.',
+  headline:
+    'The reporting period shows generally consistent, business-relevant work.',
+
+  summary:
+    'Tracked time, workstreams and available evidence were reconciled against the employee baseline and supplied context. No unsupported conclusion has been added.',
+
   strengths: [
     'Tracked work is visible across the selected period.',
-    'Project and application evidence supports the workstream summary.',
+    'Available application and screenshot evidence supports the work summary.',
     'The report is ready for human validation before release.'
   ],
-  coaching: 'Continue using clear project labels and concise notes so future reports require less evidence escalation.',
-  clientContext: 'No additional client clarification is required in this prototype example.',
-  nextFocus: 'Maintain clear tracking labels and review any meaningful schedule variance before the next release.',
-  integrity: 'No material integrity conclusion should be made unless the available evidence supports it.'
+
+  coaching:
+    'Continue using clear project labels and concise notes so future reports require less evidence escalation.',
+
+  clientContext:
+    'No additional client clarification is required in this prototype example.',
+
+  nextFocus:
+    'Maintain clear tracking labels and review any meaningful schedule variance before the next release.',
+
+  integrity:
+    'No material integrity conclusion should be made unless the available evidence supports it.'
 };
+
+
+/* ==========================================================
+   DEMO EMPLOYEES
+   ========================================================== */
 
 const demoEmployees = [
   {
-    id:'demo-main::477279',
-    connectionId:'demo-main',
-    connectionName:'Demo Scrin Connection',
-    connectionType:'shared',
-    employerLocked:false,
-    employmentId:'477279',
-    name:'Maria Gadin',
-    initials:'MG',
-    employer:'Grider & Peterson Real Estate',
-    scrinCompany:'WGH Scrin Account',
-    source:'WGH Managed',
-    role:'Virtual Assistant',
-    timezone:'UTC-07:00',
-    timezoneOffsetMinutes:-420,
-    schedule:'Monday–Friday · 8 hours/day · 40 hours/week',
-    expectedHours:160,
-    trackedHours:161.4167,
-    activeDays:20,
-    concerns:0,
-    excluded:false,
-    context:'No approved leave or schedule adjustment for the August benchmark.',
-    workstreams:[
+    id: 'demo-main::477279',
+
+    connectionId: 'demo-main',
+    connectionName: 'Demo Scrin Connection',
+    connectionType: 'shared',
+    connectionEmployer: '',
+    employerLocked: false,
+
+    employmentId: '477279',
+
+    name: 'Maria Gadin',
+    initials: 'MG',
+
+    employer:
+      'Grider & Peterson Real Estate',
+
+    scrinCompany:
+      'WGH Scrin Account',
+
+    source:
+      'WGH Managed',
+
+    role:
+      'Virtual Assistant',
+
+    timezone:
+      'UTC-07:00',
+
+    timezoneOffsetMinutes:
+      -420,
+
+    schedule:
+      'Monday–Friday · 8 hours/day · 40 hours/week',
+
+    expectedHours:
+      160,
+
+    trackedHours:
+      161.4167,
+
+    activeDays:
+      20,
+
+    concerns:
+      0,
+
+    excluded:
+      false,
+
+    context:
+      'No approved leave or schedule adjustment for the August benchmark.',
+
+    monitoringPolicy: {
+      enabled: true,
+      mode: 'hourly',
+      screenshotsPerHour: 12,
+      dailyTarget: 96,
+      expectedDayHours: 8,
+      activityTracking: true,
+      appUrlTracking: true,
+      autoPauseMinutes: 5,
+      employeeNotification: true,
+      providerSyncStatus:
+        'Saved in WGM · provider write not connected'
+    },
+
+    workstreams: [
       ['Marketing & content',30],
       ['Listings & research',22],
       ['Transactions',16],
@@ -63,7 +183,8 @@ const demoEmployees = [
       ['Admin & operations',11],
       ['Files & documents',8]
     ],
-    apps:[
+
+    apps: [
       ['Outlook / Microsoft',31],
       ['Canva',20],
       ['NavicaMLS / property systems',18],
@@ -71,43 +192,125 @@ const demoEmployees = [
       ['WhatsApp / communications',9],
       ['Other business tools',8]
     ],
-    weeks:[
-      ['Aug 3–7','40h 28m','Listing research, property updates, email coordination, database work, marketing, and general support.'],
-      ['Aug 10–14','40h 32m','Marketing content, listing materials, transactions, file work, research, and client-facing communications.'],
-      ['Aug 17–21','40h 11m','Marketing reports and assets, transaction support, listing research, document handling, and operations.'],
-      ['Aug 24–28','40h 14m','Marketing, transactions, general tasks, property research, communications, and operational support.']
+
+    weeks: [
+      [
+        'Aug 3–7',
+        '40h 28m',
+        'Listing research, property updates, email coordination, database work, marketing, and general support.'
+      ],
+      [
+        'Aug 10–14',
+        '40h 32m',
+        'Marketing content, listing materials, transactions, file work, research, and client-facing communications.'
+      ],
+      [
+        'Aug 17–21',
+        '40h 11m',
+        'Marketing reports and assets, transaction support, listing research, document handling, and operations.'
+      ],
+      [
+        'Aug 24–28',
+        '40h 14m',
+        'Marketing, transactions, general tasks, property research, communications, and operational support.'
+      ]
     ],
-    shots:[
-      ['8:46 AM','Instagram / marketing',68],
-      ['8:52 AM','Outlook',76],
-      ['8:53 AM','NavicaMLS',82],
-      ['8:56 AM','Canva',73]
+
+    shots: [
+      [
+        '8:46 AM',
+        'Instagram / marketing',
+        68
+      ],
+      [
+        '8:52 AM',
+        'Outlook',
+        76
+      ],
+      [
+        '8:53 AM',
+        'NavicaMLS',
+        82
+      ],
+      [
+        '8:56 AM',
+        'Canva',
+        73
+      ]
     ],
-    reportingStatus:'Ready'
+
+    reportingStatus:
+      'Ready'
   },
+
   {
-    id:'demo-main::500002',
-    connectionId:'demo-main',
-    connectionName:'Demo Scrin Connection',
-    connectionType:'shared',
-    employerLocked:false,
-    employmentId:'500002',
-    name:'VA 2 — sync to reveal',
-    initials:'V2',
-    employer:'Employer B',
-    scrinCompany:'WGH Scrin Account',
-    source:'WGH Managed',
-    role:'Virtual Assistant',
-    timezone:'UTC-05:00',
-    timezoneOffsetMinutes:-300,
-    schedule:'Monday–Friday · 8 hours/day · 40 hours/week',
-    expectedHours:160,
-    trackedHours:154.75,
-    activeDays:20,
-    concerns:0,
-    excluded:false,
-    context:'Example approved half-day included for prototype testing.',
-    workstreams:[
+    id: 'demo-main::500002',
+
+    connectionId: 'demo-main',
+    connectionName: 'Demo Scrin Connection',
+    connectionType: 'shared',
+    connectionEmployer: '',
+    employerLocked: false,
+
+    employmentId: '500002',
+
+    name: 'VA 2 — sync to reveal',
+    initials: 'V2',
+
+    employer:
+      'Employer B',
+
+    scrinCompany:
+      'WGH Scrin Account',
+
+    source:
+      'WGH Managed',
+
+    role:
+      'Virtual Assistant',
+
+    timezone:
+      'UTC-05:00',
+
+    timezoneOffsetMinutes:
+      -300,
+
+    schedule:
+      'Monday–Friday · 8 hours/day · 40 hours/week',
+
+    expectedHours:
+      160,
+
+    trackedHours:
+      154.75,
+
+    activeDays:
+      20,
+
+    concerns:
+      0,
+
+    excluded:
+      false,
+
+    context:
+      'Example approved half-day included for prototype testing.',
+
+    monitoringPolicy: {
+      enabled: true,
+      mode: 'hourly',
+      screenshotsPerHour: 12,
+      dailyTarget: 96,
+      expectedDayHours: 8,
+      activityTracking: true,
+      appUrlTracking: true,
+      autoPauseMinutes: 5,
+      employeeNotification: true,
+      providerSyncStatus:
+        'Saved in WGM · provider write not connected'
+    },
+
+    workstreams: [
       ['CRM & follow-up',34],
       ['Client support',24],
       ['Transactions',18],
@@ -115,141 +318,268 @@ const demoEmployees = [
       ['Meetings',7],
       ['Other',4]
     ],
-    apps:[
+
+    apps: [
       ['CRM',35],
       ['Email',27],
       ['Browser',16],
       ['Meetings',12],
       ['Documents',10]
     ],
-    weeks:[
-      ['Aug 3–7','39h 10m','CRM follow-up and client support.'],
-      ['Aug 10–14','40h 02m','Transactions and client coordination.'],
-      ['Aug 17–21','36h 30m','Approved schedule adjustment applied.'],
-      ['Aug 24–28','39h 03m','CRM and operations.']
+
+    weeks: [
+      [
+        'Aug 3–7',
+        '39h 10m',
+        'CRM follow-up and client support.'
+      ],
+      [
+        'Aug 10–14',
+        '40h 02m',
+        'Transactions and client coordination.'
+      ],
+      [
+        'Aug 17–21',
+        '36h 30m',
+        'Approved schedule adjustment applied.'
+      ],
+      [
+        'Aug 24–28',
+        '39h 03m',
+        'CRM and operations.'
+      ]
     ],
-    shots:[
+
+    shots: [
       ['9:05 AM','CRM',72],
       ['9:18 AM','Outlook',65],
       ['9:31 AM','CRM',81]
     ],
-    reportingStatus:'Context applied'
+
+    reportingStatus:
+      'Context applied'
   }
 ];
 
-state.employees = loadLocalEmployees();
-state.connections = loadLocalConnections();
+
+/* ==========================================================
+   LOCAL STORAGE
+   ========================================================== */
 
 function loadLocalEmployees(){
-  try {
-    const v = JSON.parse(
-      localStorage.getItem('wgmEmployees') || 'null'
-    );
 
-    return Array.isArray(v) && v.length
-      ? v
+  try {
+
+    const value =
+      JSON.parse(
+        localStorage.getItem(
+          'wgmEmployees'
+        )
+        ||
+        'null'
+      );
+
+    return (
+      Array.isArray(value)
+      &&
+      value.length
+    )
+      ? value
       : demoEmployees;
 
   } catch {
+
     return demoEmployees;
   }
 }
 
-function loadLocalConnections(){
-  try {
-    const v = JSON.parse(
-      localStorage.getItem('wgmConnections') || 'null'
-    );
 
-    return Array.isArray(v)
-      ? v
+function loadLocalConnections(){
+
+  try {
+
+    const value =
+      JSON.parse(
+        localStorage.getItem(
+          'wgmConnections'
+        )
+        ||
+        'null'
+      );
+
+    return Array.isArray(value)
+      ? value
       : [];
 
   } catch {
+
     return [];
   }
 }
 
+
 function saveEmployees(){
+
   try {
+
     localStorage.setItem(
       'wgmEmployees',
-      JSON.stringify(state.employees)
+      JSON.stringify(
+        state.employees
+      )
     );
+
   } catch {}
 }
+
 
 function saveConnections(){
+
   try {
+
     localStorage.setItem(
       'wgmConnections',
-      JSON.stringify(state.connections)
+      JSON.stringify(
+        state.connections
+      )
     );
+
   } catch {}
 }
 
+
+state.employees =
+  loadLocalEmployees();
+
+state.connections =
+  loadLocalConnections();
+
+if(
+  state.employees.length
+  &&
+  !state.selectedEmployeeId
+){
+
+  state.selectedEmployeeId =
+    state.employees[0].id;
+}
+
+
+/* ==========================================================
+   GENERAL HELPERS
+   ========================================================== */
+
+function escapeHtml(value=''){
+
+  return String(value).replace(
+    /[&<>"']/g,
+    char => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[char])
+  );
+}
+
+
 function initials(name=''){
+
   return name
+
     .split(/\s+/)
+
     .filter(Boolean)
+
     .slice(0,2)
-    .map(x=>x[0])
+
+    .map(
+      part =>
+        part[0]
+    )
+
     .join('')
+
     .toUpperCase()
+
     ||
     'VA';
 }
 
+
 function hoursLabel(decimal=0){
 
-  const total = Math.max(
-    0,
-    Math.round(
-      Number(decimal || 0) * 60
-    )
-  );
+  const totalMinutes =
+    Math.max(
+      0,
+      Math.round(
+        Number(decimal || 0)
+        *
+        60
+      )
+    );
 
-  return `${Math.floor(total/60)}h ${String(total%60).padStart(2,'0')}m`;
+  return (
+    `${Math.floor(totalMinutes/60)}h `
+    +
+    `${String(totalMinutes%60).padStart(2,'0')}m`
+  );
 }
+
 
 function coverage(e){
 
-  return e.expectedHours
+  if(
+    !Number(
+      e?.expectedHours
+    )
+  ){
+    return null;
+  }
 
-    ? Math.min(
-        100,
-        Math.round(
-          (
-            Number(e.trackedHours||0)
-            /
-            Number(e.expectedHours)
-          )
-          *
-          1000
+  return Math.min(
+    100,
+    Math.round(
+      (
+        Number(
+          e.trackedHours
+          ||
+          0
         )
         /
-        10
+        Number(
+          e.expectedHours
+        )
       )
-
-    : null;
+      *
+      1000
+    )
+    /
+    10
+  );
 }
 
-function statusClass(s=''){
+
+function statusClass(status=''){
 
   if(
-    /Released|Approved|Healthy|Complete|Ready|Connected|Paid|Active/i.test(s)
+    /Released|Approved|Healthy|Complete|Ready|Connected|Paid|Active/i
+      .test(status)
   ){
     return 'green';
   }
 
   if(
-    /Context|Pending|Review|Trial|Queued|Planned|Configured/i.test(s)
+    /Context|Pending|Review|Trial|Queued|Planned|Configured/i
+      .test(status)
   ){
     return 'amber';
   }
 
   if(
-    /Past|Failed|Concern|Hold|Error|Suspended/i.test(s)
+    /Past|Failed|Concern|Hold|Error|Suspended/i
+      .test(status)
   ){
     return 'red';
   }
@@ -257,23 +587,11 @@ function statusClass(s=''){
   return 'blue';
 }
 
-function escapeHtml(v=''){
 
-  return String(v).replace(
-    /[&<>"']/g,
-    m => ({
-      '&':'&amp;',
-      '<':'&lt;',
-      '>':'&gt;',
-      '"':'&quot;',
-      "'":'&#39;'
-    }[m])
-  );
-}
+function toast(message){
 
-function toast(msg){
-
-  state.toast = msg;
+  state.toast =
+    message;
 
   render();
 
@@ -286,7 +604,12 @@ function toast(msg){
   );
 }
 
-function metric(label,value,sub){
+
+function metric(
+  label,
+  value,
+  sub
+){
 
   return `
     <div class="card metric">
@@ -307,17 +630,31 @@ function metric(label,value,sub){
   `;
 }
 
-function mixBar(label,v,total=100){
 
-  const pct = total
-    ? Math.max(
-        0,
-        Math.min(
-          100,
-          (v/total)*100
+function mixBar(
+  label,
+  value,
+  total=100
+){
+
+  const pct =
+    total
+
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            (
+              value
+              /
+              total
+            )
+            *
+            100
+          )
         )
-      )
-    : 0;
+
+      : 0;
 
   return `
     <div class="work-row">
@@ -327,57 +664,59 @@ function mixBar(label,v,total=100){
       </b>
 
       <div class="progress">
-        <span style="width:${pct}%"></span>
+
+        <span
+          style="width:${pct}%"
+        ></span>
+
       </div>
 
       <span>
-        ${Math.round(v)}
-        ${total===100?'%':''}
+
+        ${Math.round(value)}
+
+        ${
+          total===100
+            ? '%'
+            : ''
+        }
+
       </span>
 
     </div>
   `;
 }
 
-function navButton(id,label,badge=''){
 
-  return `
-    <button
-      data-page="${id}"
-      class="${state.page===id?'active':''}"
-    >
-
-      <span>
-        ${label}
-      </span>
-
-      ${
-        badge
-          ? `<span class="badge">${badge}</span>`
-          : ''
-      }
-
-    </button>
-  `;
-}
+/* ==========================================================
+   EMPLOYEE / TENANCY HELPERS
+   ========================================================== */
 
 function activeEmployees(){
 
   return state.employees.filter(
-    e => !e.excluded
+    e =>
+      !e.excluded
   );
 }
+
 
 function mappedEmployers(){
 
   return [
     ...new Set(
       activeEmployees()
-        .map(e=>e.employer)
+
+        .map(
+          e =>
+            e.employer
+        )
+
         .filter(Boolean)
     )
   ];
 }
+
 
 function employeeById(id){
 
@@ -388,6 +727,7 @@ function employeeById(id){
       String(id)
   );
 }
+
 
 function ensureEmployerSelection(){
 
@@ -413,6 +753,7 @@ function ensureEmployerSelection(){
     );
   }
 
+
   const team =
     activeEmployees().filter(
       e =>
@@ -421,6 +762,7 @@ function ensureEmployerSelection(){
         state.portalEmployer
     );
 
+
   if(
     team.length
     &&
@@ -428,7 +770,9 @@ function ensureEmployerSelection(){
       e =>
         String(e.id)
         ===
-        String(state.selectedEmployeeId)
+        String(
+          state.selectedEmployeeId
+        )
     )
   ){
 
@@ -436,6 +780,7 @@ function ensureEmployerSelection(){
       team[0].id;
   }
 }
+
 
 function portalEmployees(){
 
@@ -449,12 +794,11 @@ function portalEmployees(){
   );
 }
 
+
 function employee(){
 
   if(
-    state.role
-    ===
-    'employer'
+    state.role === 'employer'
   ){
 
     const team =
@@ -465,7 +809,9 @@ function employee(){
         e =>
           String(e.id)
           ===
-          String(state.selectedEmployeeId)
+          String(
+            state.selectedEmployeeId
+          )
       )
       ||
       team[0]
@@ -474,27 +820,31 @@ function employee(){
     );
   }
 
+
   if(
-    state.role
-    ===
-    'employee'
+    state.role === 'employee'
   ){
 
-    const e =
+    const selected =
       employeeById(
         state.selectedEmployeeId
       );
 
-    return (
-      e
+    if(
+      selected
       &&
-      !e.excluded
-    )
-      ? e
-      : activeEmployees()[0]
-        ||
-        null;
+      !selected.excluded
+    ){
+      return selected;
+    }
+
+    return (
+      activeEmployees()[0]
+      ||
+      null
+    );
   }
+
 
   return (
     employeeById(
@@ -509,20 +859,17 @@ function employee(){
   );
 }
 
+
 function visibleEmployees(){
 
   if(
-    state.role
-    ===
-    'employer'
+    state.role === 'employer'
   ){
     return portalEmployees();
   }
 
   if(
-    state.role
-    ===
-    'employee'
+    state.role === 'employee'
   ){
 
     const e =
@@ -536,29 +883,56 @@ function visibleEmployees(){
   return activeEmployees();
 }
 
+
+/* ==========================================================
+   ROLE HELPERS
+   ========================================================== */
+
 function roleLabel(){
 
   return {
-    owner:'WGM Owner',
-    reviewer:'White Glove Reviewer',
-    employer:'Employer Portal',
-    employee:'Employee Portal'
+    owner:
+      'WGM Owner',
+
+    reviewer:
+      'White Glove Reviewer',
+
+    employer:
+      'Employer Portal',
+
+    employee:
+      'Employee Portal'
+
   }[state.role]
+
   ||
+
   'WGM Owner';
 }
+
 
 function roleSubLabel(){
 
   return {
-    owner:'Super Admin',
-    reviewer:'Assigned Accounts',
-    employer:'Company Owner / Admin',
-    employee:'My Work'
+    owner:
+      'Super Admin',
+
+    reviewer:
+      'Assigned Accounts',
+
+    employer:
+      'Company Owner / Admin',
+
+    employee:
+      'My Work'
+
   }[state.role]
+
   ||
+
   'Super Admin';
 }
+
 
 function setRole(role){
 
@@ -573,45 +947,88 @@ function setRole(role){
   state.page =
     'dashboard';
 
+  state.employeeTab =
+    'overview';
+
+
   if(
-    role
-    ===
-    'employer'
+    role === 'employer'
   ){
     ensureEmployerSelection();
   }
 
+
   if(
-    role
-    ===
-    'employee'
-    &&
-    (
-      !employeeById(
-        state.selectedEmployeeId
-      )
-      ||
-      employeeById(
-        state.selectedEmployeeId
-      )?.excluded
-    )
+    role === 'employee'
   ){
 
-    state.selectedEmployeeId =
-      activeEmployees()[0]?.id
+    const current =
+      employeeById(
+        state.selectedEmployeeId
+      );
+
+    if(
+      !current
       ||
-      '';
+      current.excluded
+    ){
+
+      state.selectedEmployeeId =
+        activeEmployees()[0]?.id
+        ||
+        '';
+    }
   }
 
   render();
 }
 
+
+/* ==========================================================
+   NAVIGATION
+   ========================================================== */
+
+function navButton(
+  id,
+  label,
+  badge=''
+){
+
+  return `
+    <button
+      data-page="${id}"
+      class="${
+        state.page===id
+          ? 'active'
+          : ''
+      }"
+    >
+
+      <span>
+        ${label}
+      </span>
+
+      ${
+        badge
+
+          ? `
+            <span class="badge">
+              ${badge}
+            </span>
+            `
+
+          : ''
+      }
+
+    </button>
+  `;
+}
+
+
 function navMarkup(){
 
   if(
-    state.role
-    ===
-    'reviewer'
+    state.role === 'reviewer'
   ){
 
     return [
@@ -640,10 +1057,9 @@ function navMarkup(){
     ].join('');
   }
 
+
   if(
-    state.role
-    ===
-    'employer'
+    state.role === 'employer'
   ){
 
     return [
@@ -674,10 +1090,9 @@ function navMarkup(){
     ].join('');
   }
 
+
   if(
-    state.role
-    ===
-    'employee'
+    state.role === 'employee'
   ){
 
     return [
@@ -697,6 +1112,7 @@ function navMarkup(){
       )
     ].join('');
   }
+
 
   return [
     navButton(
@@ -749,7 +1165,15 @@ function navMarkup(){
   ].join('');
 }
 
-function shell(content,title){
+
+/* ==========================================================
+   PAGE SHELL
+   ========================================================== */
+
+function shell(
+  content,
+  title
+){
 
   return `
     <div class="app-shell">
@@ -776,9 +1200,11 @@ function shell(content,title){
 
         </div>
 
+
         <nav class="nav">
           ${navMarkup()}
         </nav>
+
 
         <div class="sidebar-bottom">
 
@@ -794,7 +1220,12 @@ function shell(content,title){
                 ${roleLabel()}
               </b>
 
-              <div style="font-size:11px;opacity:.7">
+              <div
+                style="
+                  font-size:11px;
+                  opacity:.7
+                "
+              >
                 ${roleSubLabel()}
               </div>
 
@@ -806,6 +1237,7 @@ function shell(content,title){
 
       </aside>
 
+
       <main class="main">
 
         <header class="topbar">
@@ -813,6 +1245,7 @@ function shell(content,title){
           <h1>
             ${title}
           </h1>
+
 
           <div
             style="
@@ -877,13 +1310,20 @@ function shell(content,title){
 
             </select>
 
+
             <div class="mode-pill">
-              ${state.mode} MODE · Multi-source V1.3
+
+              ${state.mode}
+              MODE
+              ·
+              Multi-source V1.5
+
             </div>
 
           </div>
 
         </header>
+
 
         <section class="content">
           ${content}
@@ -891,9 +1331,16 @@ function shell(content,title){
 
       </main>
 
+
       ${
         state.toast
-          ? `<div class="toast">${escapeHtml(state.toast)}</div>`
+
+          ? `
+            <div class="toast">
+              ${escapeHtml(state.toast)}
+            </div>
+            `
+
           : ''
       }
 
@@ -901,44 +1348,51 @@ function shell(content,title){
   `;
 }
 
+
+/* ==========================================================
+   OWNER DASHBOARD
+   ========================================================== */
+
 function dashboard(){
 
   if(
-    state.role
-    ===
-    'employer'
+    state.role === 'employer'
   ){
     return employerDashboard();
   }
 
   if(
-    state.role
-    ===
-    'employee'
+    state.role === 'employee'
   ){
     return employeeDashboard();
   }
 
   if(
-    state.role
-    ===
-    'reviewer'
+    state.role === 'reviewer'
   ){
     return reviewerDashboard();
   }
 
-  const emps =
+
+  const employees =
     activeEmployees();
+
 
   const employerCount =
     new Set(
-      emps
-        .map(e=>e.employer)
+      employees
+
+        .map(
+          e =>
+            e.employer
+        )
+
         .filter(Boolean)
     ).size;
 
-  const review =
-    emps.filter(
+
+  const reviewCount =
+    employees.filter(
       e =>
         /Review/i.test(
           e.reportingStatus
@@ -946,6 +1400,7 @@ function dashboard(){
           ''
         )
     ).length;
+
 
   return shell(
     `
@@ -958,11 +1413,15 @@ function dashboard(){
         </h2>
 
         <p>
-          Multiple capture connections feed one WGM evidence,
-          review and reporting platform while customer data stays separated.
+
+          Multiple capture connections feed one
+          WGM evidence, review and reporting platform
+          while employer data remains isolated.
+
         </p>
 
       </div>
+
 
       <div class="actions">
 
@@ -983,6 +1442,7 @@ function dashboard(){
       </div>
 
     </div>
+
 
     <div class="grid metrics">
 
@@ -1005,7 +1465,7 @@ function dashboard(){
       ${
         metric(
           'Employees monitored',
-          emps.length,
+          employees.length,
           'Reportable employees'
         )
       }
@@ -1013,12 +1473,13 @@ function dashboard(){
       ${
         metric(
           'Needs review',
-          review,
+          reviewCount,
           'Before release'
         )
       }
 
     </div>
+
 
     <div class="grid two-col">
 
@@ -1029,9 +1490,14 @@ function dashboard(){
         </div>
 
         <div class="panel-sub">
-          Every source employee is bound to a connection
-          and a WGM employer before customer access.
+
+          Every source employee
+          is bound to a connection
+          and a WGM employer
+          before customer access.
+
         </div>
+
 
         <table>
 
@@ -1046,10 +1512,11 @@ function dashboard(){
 
           </thead>
 
+
           <tbody>
 
             ${
-              emps.map(
+              employees.map(
                 e => `
                 <tr>
 
@@ -1074,11 +1541,17 @@ function dashboard(){
 
                   <td>
 
-                    <span class="status ${statusClass(e.reportingStatus)}">
+                    <span
+                      class="status ${statusClass(e.reportingStatus)}"
+                    >
 
                       <span class="dot"></span>
 
-                      ${escapeHtml(e.reportingStatus||'Synced')}
+                      ${escapeHtml(
+                        e.reportingStatus
+                        ||
+                        'Synced'
+                      )}
 
                     </span>
 
@@ -1095,11 +1568,13 @@ function dashboard(){
 
       </div>
 
+
       <div class="card panel">
 
         <div class="panel-title">
           Isolation rules
         </div>
+
 
         <div class="context-box">
 
@@ -1108,11 +1583,16 @@ function dashboard(){
           </h4>
 
           <p>
-            Every employee discovered through that Scrin token
-            is locked to the employer that owns the connection.
+
+            Every employee discovered
+            through that Scrin connection
+            is locked to the employer
+            that owns the connection.
+
           </p>
 
         </div>
+
 
         <div class="context-box">
 
@@ -1121,12 +1601,16 @@ function dashboard(){
           </h4>
 
           <p>
-            Each employee must be mapped to an employer
-            or explicitly marked Internal / Excluded
-            before customer access.
+
+            Each employee must be mapped
+            to an employer
+            or explicitly marked
+            Internal / Excluded.
+
           </p>
 
         </div>
+
 
         <div class="context-box">
 
@@ -1135,9 +1619,10 @@ function dashboard(){
           </h4>
 
           <p>
-            Only employees whose WGM employer matches
-            the signed-in employer are returned
-            to that customer experience.
+
+            Employers see only employees
+            belonging to their organization.
+
           </p>
 
         </div>
@@ -1150,19 +1635,30 @@ function dashboard(){
   );
 }
 
+
+/* ==========================================================
+   EMPLOYER DASHBOARD
+   ========================================================== */
+
 function employerDashboard(){
 
   const team =
     portalEmployees();
 
-  const total =
+
+  const tracked =
     team.reduce(
       (sum,e) =>
         sum
         +
-        Number(e.trackedHours||0),
+        Number(
+          e.trackedHours
+          ||
+          0
+        ),
       0
     );
+
 
   const avgCoverage =
     team.length
@@ -1185,17 +1681,19 @@ function employerDashboard(){
 
       : 0;
 
+
   const released =
     team.filter(
       e =>
-        e.reportingStatus==='Released'
+        e.reportingStatus === 'Released'
         ||
         (
-          state.reportEmployeeId===e.id
+          state.reportEmployeeId === e.id
           &&
-          state.reportStatus==='Released'
+          state.reportStatus === 'Released'
         )
     ).length;
+
 
   return shell(
     `
@@ -1204,16 +1702,26 @@ function employerDashboard(){
       <div>
 
         <h2>
-          ${escapeHtml(state.portalEmployer||'Employer')}
+
+          ${escapeHtml(
+            state.portalEmployer
+            ||
+            'Employer'
+          )}
+
           Workforce Overview
+
         </h2>
 
         <p>
-          This portal is scoped to one employer.
-          Employees mapped to any other organization are excluded.
+
+          This portal is scoped
+          to one employer only.
+
         </p>
 
       </div>
+
 
       <select
         id="employerSwitcher"
@@ -1222,16 +1730,16 @@ function employerDashboard(){
 
         ${
           mappedEmployers().map(
-            x => `
+            employer => `
             <option
-              value="${escapeHtml(x)}"
+              value="${escapeHtml(employer)}"
               ${
-                x===state.portalEmployer
+                employer===state.portalEmployer
                   ? 'selected'
                   : ''
               }
             >
-              ${escapeHtml(x)}
+              ${escapeHtml(employer)}
             </option>
             `
           ).join('')
@@ -1240,6 +1748,7 @@ function employerDashboard(){
       </select>
 
     </div>
+
 
     <div class="grid metrics">
 
@@ -1254,7 +1763,7 @@ function employerDashboard(){
       ${
         metric(
           'Tracked this period',
-          hoursLabel(total),
+          hoursLabel(tracked),
           'Visible team'
         )
       }
@@ -1277,6 +1786,7 @@ function employerDashboard(){
 
     </div>
 
+
     <div class="grid two-col">
 
       <div class="card panel">
@@ -1284,6 +1794,7 @@ function employerDashboard(){
         <div class="panel-title">
           My Team
         </div>
+
 
         <table>
 
@@ -1298,59 +1809,70 @@ function employerDashboard(){
 
           </thead>
 
+
           <tbody>
 
             ${
-              team.map(
-                e => `
-                <tr>
+              team.length
 
-                  <td>
+                ? team.map(
+                    e => `
+                    <tr>
 
-                    <span
-                      class="row-link"
-                      data-open-id="${escapeHtml(e.id)}"
-                    >
-                      ${escapeHtml(e.name)}
-                    </span>
+                      <td>
 
-                    <div class="small">
-                      ${escapeHtml(e.role||'Employee')}
-                    </div>
+                        <span
+                          class="row-link"
+                          data-open-id="${escapeHtml(e.id)}"
+                        >
+                          ${escapeHtml(e.name)}
+                        </span>
 
-                  </td>
+                        <div class="small">
+                          ${escapeHtml(e.role||'Employee')}
+                        </div>
 
-                  <td>
-                    ${escapeHtml(e.connectionName||'Scrin')}
-                  </td>
+                      </td>
 
-                  <td>
-                    ${hoursLabel(e.trackedHours)}
-                  </td>
+                      <td>
+                        ${escapeHtml(e.connectionName||'Scrin')}
+                      </td>
 
-                  <td>
+                      <td>
+                        ${hoursLabel(e.trackedHours)}
+                      </td>
 
-                    <span class="status ${statusClass(e.reportingStatus)}">
+                      <td>
 
-                      <span class="dot"></span>
+                        <span
+                          class="status ${statusClass(e.reportingStatus)}"
+                        >
 
-                      ${escapeHtml(e.reportingStatus||'Synced')}
+                          <span class="dot"></span>
 
-                    </span>
+                          ${escapeHtml(
+                            e.reportingStatus
+                            ||
+                            'Synced'
+                          )}
 
-                  </td>
+                        </span>
 
-                </tr>
-                `
-              ).join('')
-              ||
-              `
-              <tr>
-                <td colspan="4">
-                  No employees mapped to this employer.
-                </td>
-              </tr>
-              `
+                      </td>
+
+                    </tr>
+                    `
+                  ).join('')
+
+                : `
+                  <tr>
+
+                    <td colspan="4">
+                      No employees mapped to this employer.
+                    </td>
+
+                  </tr>
+                  `
             }
 
           </tbody>
@@ -1359,11 +1881,13 @@ function employerDashboard(){
 
       </div>
 
+
       <div class="card panel">
 
         <div class="panel-title">
           Employer data boundary
         </div>
+
 
         <div class="context-box">
 
@@ -1372,11 +1896,19 @@ function employerDashboard(){
           </h4>
 
           <p>
-            Your own roster, hours, screenshots, workstreams,
-            released reports and billing.
+
+            Your roster,
+            hours,
+            screenshots,
+            monitoring policies,
+            workstreams,
+            released reports
+            and billing.
+
           </p>
 
         </div>
+
 
         <div class="context-box">
 
@@ -1385,9 +1917,13 @@ function employerDashboard(){
           </h4>
 
           <p>
-            Other employers, their employees,
-            unreleased drafts, reviewer notes
-            or unrelated source connections.
+
+            Other employers,
+            their employees,
+            unreleased reports,
+            reviewer notes
+            or unrelated Scrin connections.
+
           </p>
 
         </div>
@@ -1400,18 +1936,29 @@ function employerDashboard(){
   );
 }
 
+
+/* ==========================================================
+   EMPLOYEE DASHBOARD
+   ========================================================== */
+
 function employeeDashboard(){
 
   const e =
     employee();
 
+
   if(!e){
 
     return shell(
-      '<div class="card empty">No employee selected.</div>',
+      `
+      <div class="card empty">
+        No employee selected.
+      </div>
+      `,
       'Employee Portal'
     );
   }
+
 
   return shell(
     `
@@ -1424,19 +1971,32 @@ function employeeDashboard(){
         </h2>
 
         <p>
+
           ${escapeHtml(e.name)}
+
           ·
-          ${escapeHtml(e.employer||'Employer')}
+
+          ${escapeHtml(
+            e.employer
+            ||
+            'Employer'
+          )}
+
         </p>
 
       </div>
 
+
       <span class="status green">
+
         <span class="dot"></span>
+
         Tracking connected
+
       </span>
 
     </div>
+
 
     <div class="grid metrics">
 
@@ -1467,12 +2027,17 @@ function employeeDashboard(){
       ${
         metric(
           'Report status',
-          escapeHtml(e.reportingStatus||'Synced'),
+          escapeHtml(
+            e.reportingStatus
+            ||
+            'Synced'
+          ),
           'My record'
         )
       }
 
     </div>
+
 
     <div class="grid two-col">
 
@@ -1481,6 +2046,7 @@ function employeeDashboard(){
         <div class="panel-title">
           My work profile
         </div>
+
 
         <div class="context-box">
 
@@ -1498,6 +2064,7 @@ function employeeDashboard(){
 
         </div>
 
+
         <div class="context-box">
 
           <h4>
@@ -1512,6 +2079,7 @@ function employeeDashboard(){
 
       </div>
 
+
       <div class="card panel">
 
         <div class="panel-title">
@@ -1519,9 +2087,13 @@ function employeeDashboard(){
         </div>
 
         <p class="small">
-          This view contains only this employee's
-          own authorized information.
+
+          This view contains only
+          this employee's own
+          authorized information.
+
         </p>
+
 
         <div class="actions">
 
@@ -1549,18 +2121,25 @@ function employeeDashboard(){
   );
 }
 
+
+/* ==========================================================
+   REVIEWER DASHBOARD
+   ========================================================== */
+
 function reviewerDashboard(){
 
-  const emps =
+  const employees =
     activeEmployees();
 
-  const needsReview =
-    emps.filter(
+
+  const flagged =
+    employees.filter(
       e =>
         reviewColor(e)
         !==
         'Green'
     );
+
 
   return shell(
     `
@@ -1573,11 +2152,14 @@ function reviewerDashboard(){
         </h2>
 
         <p>
-          Assigned reports are triaged by evidence coverage
-          and review state before release.
+
+          Assigned reports are triaged
+          before customer release.
+
         </p>
 
       </div>
+
 
       <button
         class="btn primary"
@@ -1588,12 +2170,13 @@ function reviewerDashboard(){
 
     </div>
 
+
     <div class="grid metrics">
 
       ${
         metric(
           'Assigned employees',
-          emps.length,
+          employees.length,
           'Across authorized employers'
         )
       }
@@ -1601,11 +2184,9 @@ function reviewerDashboard(){
       ${
         metric(
           'Green eligible',
-          emps.filter(
+          employees.filter(
             e =>
-              reviewColor(e)
-              ===
-              'Green'
+              reviewColor(e)==='Green'
           ).length,
           'Can be batch approved'
         )
@@ -1614,7 +2195,7 @@ function reviewerDashboard(){
       ${
         metric(
           'Yellow / Red',
-          needsReview.length,
+          flagged.length,
           'Individual review'
         )
       }
@@ -1628,6 +2209,7 @@ function reviewerDashboard(){
       }
 
     </div>
+
 
     <div class="card panel">
 
@@ -1643,35 +2225,52 @@ function reviewerDashboard(){
   );
 }
 
+
+/* ==========================================================
+   REVIEW STATUS
+   ========================================================== */
+
 function reviewColor(e){
 
   const cov =
     coverage(e);
 
+
   if(
-    Number(e.concerns||0)
+    Number(
+      e.concerns
+      ||
+      0
+    )
     >
     1
   ){
     return 'Red';
   }
 
+
   if(
-    Number(e.concerns||0)
+    Number(
+      e.concerns
+      ||
+      0
+    )
     ===
     1
     ||
     (
-      cov!==null
+      cov !== null
       &&
-      cov<90
+      cov < 90
     )
   ){
     return 'Yellow';
   }
 
+
   return 'Green';
 }
+
 
 function reviewQueueTable(){
 
@@ -1692,6 +2291,7 @@ function reviewQueueTable(){
 
       </thead>
 
+
       <tbody>
 
         ${
@@ -1701,14 +2301,20 @@ function reviewQueueTable(){
               const color =
                 reviewColor(e);
 
+
               const release =
                 (
                   state.reportEmployeeId===e.id
+
                     ? state.reportStatus
+
                     : e.reportingStatus
                 )
+
                 ||
+
                 'Not generated';
+
 
               return `
                 <tr>
@@ -1745,9 +2351,13 @@ function reviewQueueTable(){
                     <span
                       class="status ${
                         color==='Green'
+
                           ? 'green'
+
                           : color==='Yellow'
+
                             ? 'amber'
+
                             : 'red'
                       }"
                     >
@@ -1776,25 +2386,32 @@ function reviewQueueTable(){
   `;
 }
 
+
+/* ==========================================================
+   COMPANIES
+   ========================================================== */
+
 function companies(){
 
   const groups = {};
 
+
   activeEmployees().forEach(
     e => {
 
-      const k =
+      const employer =
         e.employer
         ||
         'Unassigned';
 
       (
-        groups[k]
+        groups[employer]
         ||=
         []
       ).push(e);
     }
   );
+
 
   return shell(
     `
@@ -1807,10 +2424,14 @@ function companies(){
         </h2>
 
         <p>
-          WGM employer mapping is the customer isolation boundary.
+
+          WGM employer mapping
+          is the customer isolation boundary.
+
         </p>
 
       </div>
+
 
       <button
         class="btn primary"
@@ -1820,6 +2441,7 @@ function companies(){
       </button>
 
     </div>
+
 
     <div class="card panel">
 
@@ -1836,11 +2458,12 @@ function companies(){
 
         </thead>
 
+
         <tbody>
 
           ${
             Object.entries(groups).map(
-              ([name,emps]) => `
+              ([name,employees]) => `
               <tr>
 
                 <td>
@@ -1848,13 +2471,14 @@ function companies(){
                 </td>
 
                 <td>
-                  ${emps.length}
+                  ${employees.length}
                 </td>
 
                 <td>
+
                   ${
                     new Set(
-                      emps.map(
+                      employees.map(
                         e =>
                           e.connectionId
                           ||
@@ -1862,6 +2486,7 @@ function companies(){
                       )
                     ).size
                   }
+
                 </td>
 
                 <td>
@@ -1878,7 +2503,9 @@ function companies(){
 
                     ${
                       name==='Unassigned'
+
                         ? 'Mapping required'
+
                         : 'Active'
                     }
 
@@ -1901,20 +2528,30 @@ function companies(){
   );
 }
 
+
+/* ==========================================================
+   EMPLOYEES / MY TEAM
+   ========================================================== */
+
 function employees(){
 
-  const emps =
+  const employees =
     visibleEmployees();
+
 
   const title =
     state.role==='employer'
       ? 'My Team'
       : 'Employees';
 
+
   const intro =
     state.role==='employer'
+
       ? 'Only employees mapped to your organization are shown.'
+
       : 'Choose any synced employee to inspect monitoring data or generate a report.';
+
 
   return shell(
     `
@@ -1931,6 +2568,7 @@ function employees(){
         </p>
 
       </div>
+
 
       ${
         state.role==='owner'
@@ -1960,6 +2598,7 @@ function employees(){
 
     </div>
 
+
     <div class="card panel">
 
       ${
@@ -1980,6 +2619,7 @@ function employees(){
           : ''
       }
 
+
       <table>
 
         <thead>
@@ -1995,10 +2635,11 @@ function employees(){
 
         </thead>
 
+
         <tbody>
 
           ${
-            emps.map(
+            employees.map(
               e => `
               <tr>
 
@@ -2035,11 +2676,17 @@ function employees(){
 
                 <td>
 
-                  <span class="status ${statusClass(e.reportingStatus)}">
+                  <span
+                    class="status ${statusClass(e.reportingStatus)}"
+                  >
 
                     <span class="dot"></span>
 
-                    ${escapeHtml(e.reportingStatus||'Synced')}
+                    ${escapeHtml(
+                      e.reportingStatus
+                      ||
+                      'Synced'
+                    )}
 
                   </span>
 
@@ -2060,23 +2707,38 @@ function employees(){
   );
 }
 
+
+/* ==========================================================
+   MONITORING
+   ========================================================== */
+
 function monitoring(){
 
   return employeeView();
 }
+
 
 function employeeView(){
 
   const e =
     employee();
 
+
   if(!e){
 
     return shell(
-      '<div class="card empty">No employee is available in this portal.</div>',
+      `
+      <div class="card empty">
+
+        No employee is available
+        in this portal.
+
+      </div>
+      `,
       'Employee Monitoring'
     );
   }
+
 
   const tabs = [
     'overview',
@@ -2084,19 +2746,50 @@ function employeeView(){
     'screenshots',
     'workstreams',
     'apps',
-    'context',
-    'reports'
+    'policy'
   ];
 
+
+  if(
+    state.role !== 'employee'
+  ){
+    tabs.push(
+      'context'
+    );
+  }
+
+
+  tabs.push(
+    'reports'
+  );
+
+
   const labels = {
-    overview:'Overview',
-    timeline:'Timeline',
-    screenshots:'Screenshots',
-    workstreams:'Workstreams',
-    apps:'Apps & URLs',
-    context:'Context',
-    reports:'Reports'
+    overview:
+      'Overview',
+
+    timeline:
+      'Timeline',
+
+    screenshots:
+      'Screenshots',
+
+    workstreams:
+      'Workstreams',
+
+    apps:
+      'Apps & URLs',
+
+    policy:
+      'Monitoring Settings',
+
+    context:
+      'Context',
+
+    reports:
+      'Reports'
   };
+
 
   return shell(
     `
@@ -2106,15 +2799,14 @@ function employeeView(){
 
         <div class="employee-avatar">
 
-          ${
-            escapeHtml(
-              e.initials
-              ||
-              initials(e.name)
-            )
-          }
+          ${escapeHtml(
+            e.initials
+            ||
+            initials(e.name)
+          )}
 
         </div>
+
 
         <div>
 
@@ -2124,21 +2816,35 @@ function employeeView(){
 
           <div class="small">
 
-            ${escapeHtml(e.employer||'Unassigned employer')}
+            ${escapeHtml(
+              e.employer
+              ||
+              'Unassigned employer'
+            )}
 
             ·
 
-            ${escapeHtml(e.role||'Virtual Assistant')}
+            ${escapeHtml(
+              e.role
+              ||
+              'Virtual Assistant'
+            )}
 
             ·
 
-            ${escapeHtml(e.connectionName||'Scrin')}
+            ${escapeHtml(
+              e.connectionName
+              ||
+              'Scrin'
+            )}
 
           </div>
 
         </div>
 
+
         <div class="spacer"></div>
+
 
         <span class="status green">
 
@@ -2150,20 +2856,21 @@ function employeeView(){
 
       </div>
 
+
       <div class="tabs">
 
         ${
           tabs.map(
-            t => `
+            tab => `
             <button
               class="tab ${
-                state.employeeTab===t
+                state.employeeTab===tab
                   ? 'active'
                   : ''
               }"
-              data-tab="${t}"
+              data-tab="${tab}"
             >
-              ${labels[t]}
+              ${labels[tab]}
             </button>
             `
           ).join('')
@@ -2171,7 +2878,14 @@ function employeeView(){
 
       </div>
 
-      ${employeeTabContent(e)}
+
+      ${
+        state.employeeTab==='policy'
+
+          ? monitoringPolicyView(e)
+
+          : employeeTabContent(e)
+      }
 
     </div>
     `,
@@ -2179,16 +2893,22 @@ function employeeView(){
   );
 }
 
+
+/* ==========================================================
+   EMPLOYEE TAB CONTENT
+   ========================================================== */
+
 function employeeTabContent(e){
 
   if(
-    state.employeeTab==='screenshots'
+    state.employeeTab === 'screenshots'
   ){
     return screenshotView(e);
   }
 
+
   if(
-    state.employeeTab==='workstreams'
+    state.employeeTab === 'workstreams'
   ){
 
     return `
@@ -2199,18 +2919,28 @@ function employeeTabContent(e){
           ${
             (e.workstreams||[])
               .map(
-                x =>
+                item =>
                   mixBar(
-                    x[0],
-                    x[1]
+                    item[0],
+                    item[1]
                   )
               )
               .join('')
+
             ||
-            '<div class="empty">Generate/sync period data to populate workstreams.</div>'
+
+            `
+            <div class="empty">
+
+              Generate or sync period data
+              to populate workstreams.
+
+            </div>
+            `
           }
 
         </div>
+
 
         <div class="callout">
 
@@ -2218,9 +2948,11 @@ function employeeTabContent(e){
             Reporting rule
           </strong>
 
-          Project time is the primary allocation signal.
-          Screenshots and device activity support interpretation;
-          they do not become a standalone productivity verdict.
+          Project and application evidence
+          supports interpretation.
+
+          It is not a standalone
+          productivity verdict.
 
         </div>
 
@@ -2228,8 +2960,9 @@ function employeeTabContent(e){
     `;
   }
 
+
   if(
-    state.employeeTab==='apps'
+    state.employeeTab === 'apps'
   ){
 
     return `
@@ -2240,18 +2973,28 @@ function employeeTabContent(e){
           ${
             (e.apps||[])
               .map(
-                x =>
+                item =>
                   mixBar(
-                    x[0],
-                    x[1]
+                    item[0],
+                    item[1]
                   )
               )
               .join('')
+
             ||
-            '<div class="empty">Sync screenshot metadata to populate apps and URLs.</div>'
+
+            `
+            <div class="empty">
+
+              Sync screenshot metadata
+              to populate apps and URLs.
+
+            </div>
+            `
           }
 
         </div>
+
 
         <div class="context-box">
 
@@ -2260,10 +3003,14 @@ function employeeTabContent(e){
           </h4>
 
           <p>
-            Applications and URLs help establish business relevance
-            and repeated patterns.
+
+            Applications and URLs
+            help establish business relevance
+            and repeated work patterns.
+
             They are contextual evidence,
             not a performance score.
+
           </p>
 
         </div>
@@ -2272,14 +3019,16 @@ function employeeTabContent(e){
     `;
   }
 
+
   if(
-    state.employeeTab==='context'
+    state.employeeTab === 'context'
   ){
     return contextView(e);
   }
 
+
   if(
-    state.employeeTab==='reports'
+    state.employeeTab === 'reports'
   ){
 
     return `
@@ -2296,6 +3045,7 @@ function employeeTabContent(e){
           </tr>
 
         </thead>
+
 
         <tbody>
 
@@ -2335,7 +3085,9 @@ function employeeTabContent(e){
                 class="status ${
                   statusClass(
                     state.reportEmployeeId===e.id
+
                       ? state.reportStatus
+
                       : e.reportingStatus
                   )
                 }"
@@ -2346,7 +3098,9 @@ function employeeTabContent(e){
                 ${
                   escapeHtml(
                     state.reportEmployeeId===e.id
+
                       ? state.reportStatus
+
                       : e.reportingStatus
                   )
                 }
@@ -2363,8 +3117,9 @@ function employeeTabContent(e){
     `;
   }
 
+
   if(
-    state.employeeTab==='timeline'
+    state.employeeTab === 'timeline'
   ){
 
     return `
@@ -2378,10 +3133,19 @@ function employeeTabContent(e){
               hoursLabel(
                 Math.min(
                   8.1,
-                  Number(e.trackedHours||0)
+
+                  Number(
+                    e.trackedHours
+                    ||
+                    0
+                  )
                   /
                   Math.max(
-                    Number(e.activeDays||1),
+                    Number(
+                      e.activeDays
+                      ||
+                      1
+                    ),
                     1
                   )
                 )
@@ -2392,7 +3156,9 @@ function employeeTabContent(e){
 
           <div class="muted">
 
-            Representative tracked day ·
+            Representative tracked day
+
+            ·
 
             ${
               escapeHtml(
@@ -2406,6 +3172,7 @@ function employeeTabContent(e){
 
         </div>
 
+
         <span class="status green">
 
           <span class="dot"></span>
@@ -2416,13 +3183,23 @@ function employeeTabContent(e){
 
       </div>
 
+
       <div class="small">
         Workday timeline
       </div>
 
+
       <div class="timeline">
-        <span style="left:27%;width:34%"></span>
+
+        <span
+          style="
+            left:27%;
+            width:34%
+          "
+        ></span>
+
       </div>
+
 
       <table>
 
@@ -2437,6 +3214,7 @@ function employeeTabContent(e){
 
         </thead>
 
+
         <tbody>
 
           <tr>
@@ -2446,7 +3224,11 @@ function employeeTabContent(e){
             </td>
 
             <td>
-              ${escapeHtml(e.workstreams?.[0]?.[0]||'Project')}
+              ${escapeHtml(
+                e.workstreams?.[0]?.[0]
+                ||
+                'Project'
+              )}
             </td>
 
             <td>
@@ -2464,6 +3246,7 @@ function employeeTabContent(e){
       </table>
     `;
   }
+
 
   return `
     <div class="grid metrics">
@@ -2504,6 +3287,7 @@ function employeeTabContent(e){
 
     </div>
 
+
     <div class="grid two-col">
 
       <div>
@@ -2515,17 +3299,21 @@ function employeeTabContent(e){
         ${
           (e.weeks||[])
             .map(
-              w => `
+              week => `
               <div class="context-box">
 
                 <h4>
-                  ${escapeHtml(w[0])}
+
+                  ${escapeHtml(week[0])}
+
                   ·
-                  ${escapeHtml(w[1])}
+
+                  ${escapeHtml(week[1])}
+
                 </h4>
 
                 <p>
-                  ${escapeHtml(w[2])}
+                  ${escapeHtml(week[2])}
                 </p>
 
               </div>
@@ -2536,11 +3324,13 @@ function employeeTabContent(e){
 
       </div>
 
+
       <div>
 
         <div class="panel-title">
           WGM baseline
         </div>
+
 
         <div class="context-box">
 
@@ -2558,6 +3348,7 @@ function employeeTabContent(e){
 
         </div>
 
+
         <div class="context-box">
 
           <h4>
@@ -2569,14 +3360,19 @@ function employeeTabContent(e){
           </p>
 
           <p>
+
             ${
               e.employerLocked
+
                 ? 'Dedicated employer connection'
+
                 : 'Shared / individually mapped connection'
             }
+
           </p>
 
         </div>
+
 
         <div class="context-box">
 
@@ -2596,161 +3392,400 @@ function employeeTabContent(e){
   `;
 }
 
-function screenshotView(e){
 
-  return `
-    <div class="toolbar">
+/* ==========================================================
+   DAILY TIME HELPERS
+   ========================================================== */
 
-      <div class="field">
+function dayEpochRange(
+  dateString,
+  offsetMinutes=0
+){
 
-        <label>
-          Date
-        </label>
+  const startMilliseconds =
+    Date.parse(
+      `${dateString}T00:00:00Z`
+    )
+    -
+    (
+      Number(offsetMinutes||0)
+      *
+      60
+      *
+      1000
+    );
 
-        <input
-          id="screenDate"
-          type="date"
-          value="2026-09-18"
-        >
 
-      </div>
+  const endMilliseconds =
+    startMilliseconds
+    +
+    (24 * 60 * 60 * 1000)
+    -
+    1000;
 
-      <div class="field">
 
-        <label>
-          Project
-        </label>
+  return {
+    from:
+      Math.floor(
+        startMilliseconds
+        /
+        1000
+      ),
 
-        <select>
-
-          <option>
-            All projects
-          </option>
-
-          ${
-            (e.workstreams||[])
-              .map(
-                x => `
-                <option>
-                  ${escapeHtml(x[0])}
-                </option>
-                `
-              )
-              .join('')
-          }
-
-        </select>
-
-      </div>
-
-      <div class="field">
-
-        <label>
-          Application
-        </label>
-
-        <select>
-
-          <option>
-            All apps & URLs
-          </option>
-
-          ${
-            (e.apps||[])
-              .map(
-                x => `
-                <option>
-                  ${escapeHtml(x[0])}
-                </option>
-                `
-              )
-              .join('')
-          }
-
-        </select>
-
-      </div>
-
-      <div class="spacer"></div>
-
-      <button
-        class="btn"
-        id="loadLiveDay"
-      >
-        Load selected day from Scrin
-      </button>
-
-    </div>
-
-    <div class="banner">
-
-      <div>
-
-        <div class="big">
-          Daily screenshot evidence
-        </div>
-
-        <div class="muted">
-          Evidence is loaded only from this employee's source connection.
-        </div>
-
-      </div>
-
-      <span class="status blue">
-
-        <span class="dot"></span>
-
-        ${escapeHtml(e.connectionName||'Evidence view')}
-
-      </span>
-
-    </div>
-
-    <div id="shotArea">
-
-      <div class="shot-grid">
-
-        ${
-          (e.shots||[])
-            .map(
-              s =>
-                shot(
-                  s[0],
-                  s[1],
-                  s[2],
-                  s[3]
-                )
-            )
-            .join('')
-          ||
-          '<div class="empty">No screenshot metadata loaded.</div>'
-        }
-
-      </div>
-
-    </div>
-  `;
+    to:
+      Math.floor(
+        endMilliseconds
+        /
+        1000
+      )
+  };
 }
 
-function shot(time,app,level,imageUrl){
 
-  const safeUrl =
-    imageUrl
-      ? escapeHtml(imageUrl)
+function timeLabel(
+  epochSeconds,
+  offsetMinutes=0
+){
+
+  if(
+    epochSeconds === null
+    ||
+    epochSeconds === undefined
+  ){
+    return '—';
+  }
+
+
+  const adjusted =
+    new Date(
+      (
+        Number(epochSeconds)
+        +
+        (
+          Number(offsetMinutes||0)
+          *
+          60
+        )
+      )
+      *
+      1000
+    );
+
+
+  let hours =
+    adjusted.getUTCHours();
+
+
+  const minutes =
+    String(
+      adjusted.getUTCMinutes()
+    ).padStart(
+      2,
+      '0'
+    );
+
+
+  const suffix =
+    hours >= 12
+      ? 'PM'
+      : 'AM';
+
+
+  hours =
+    hours % 12;
+
+
+  if(
+    hours === 0
+  ){
+    hours = 12;
+  }
+
+
+  return (
+    `${hours}:`
+    +
+    `${minutes} `
+    +
+    suffix
+  );
+}
+
+
+function validIntervals(
+  activities=[]
+){
+
+  return activities
+
+    .map(
+      activity => [
+        Number(activity.from),
+        Number(activity.to)
+      ]
+    )
+
+    .filter(
+      interval =>
+        Number.isFinite(
+          interval[0]
+        )
+        &&
+        Number.isFinite(
+          interval[1]
+        )
+        &&
+        interval[1]
+        >
+        interval[0]
+    )
+
+    .sort(
+      (a,b) =>
+        a[0]
+        -
+        b[0]
+    );
+}
+
+
+function unionTrackedSeconds(
+  activities=[]
+){
+
+  const intervals =
+    validIntervals(
+      activities
+    );
+
+
+  if(
+    !intervals.length
+  ){
+    return 0;
+  }
+
+
+  let total =
+    0;
+
+
+  let currentStart =
+    intervals[0][0];
+
+
+  let currentEnd =
+    intervals[0][1];
+
+
+  for(
+    let i=1;
+    i<intervals.length;
+    i++
+  ){
+
+    const [
+      start,
+      end
+    ] =
+      intervals[i];
+
+
+    if(
+      start
+      <=
+      currentEnd
+    ){
+
+      currentEnd =
+        Math.max(
+          currentEnd,
+          end
+        );
+
+    } else {
+
+      total +=
+        currentEnd
+        -
+        currentStart;
+
+
+      currentStart =
+        start;
+
+
+      currentEnd =
+        end;
+    }
+  }
+
+
+  total +=
+    currentEnd
+    -
+    currentStart;
+
+
+  return total;
+}
+
+
+function workSessions(
+  activities=[],
+  gapToleranceSeconds=90
+){
+
+  const intervals =
+    validIntervals(
+      activities
+    );
+
+
+  if(
+    !intervals.length
+  ){
+    return [];
+  }
+
+
+  const sessions =
+    [];
+
+
+  let currentStart =
+    intervals[0][0];
+
+
+  let currentEnd =
+    intervals[0][1];
+
+
+  for(
+    let i=1;
+    i<intervals.length;
+    i++
+  ){
+
+    const [
+      start,
+      end
+    ] =
+      intervals[i];
+
+
+    if(
+      start
+      <=
+      currentEnd
+      +
+      gapToleranceSeconds
+    ){
+
+      currentEnd =
+        Math.max(
+          currentEnd,
+          end
+        );
+
+    } else {
+
+      sessions.push(
+        [
+          currentStart,
+          currentEnd
+        ]
+      );
+
+
+      currentStart =
+        start;
+
+
+      currentEnd =
+        end;
+    }
+  }
+
+
+  sessions.push(
+    [
+      currentStart,
+      currentEnd
+    ]
+  );
+
+
+  return sessions;
+}
+
+
+function screenshotApplication(
+  screenshot
+){
+
+  const applications =
+    Array.isArray(
+      screenshot?.applications
+    )
+      ? screenshot.applications
+      : [];
+
+
+  return (
+    applications.find(
+      app =>
+        app.fromScreen
+    )?.applicationName
+
+    ||
+
+    applications[0]
+      ?.applicationName
+
+    ||
+
+    'Screenshot'
+  );
+}
+
+
+/* ==========================================================
+   SCREENSHOT CARD
+   ========================================================== */
+
+function shotCard(
+  time,
+  app,
+  level,
+  thumbUrl,
+  fullUrl
+){
+
+  const thumbnail =
+    thumbUrl
+      ? escapeHtml(thumbUrl)
       : '';
 
+
+  const full =
+    fullUrl
+      ? escapeHtml(fullUrl)
+      : thumbnail;
+
+
   const image =
-    safeUrl
+    thumbnail
 
       ? `
         <a
-          href="${safeUrl}"
+          href="${full}"
           target="_blank"
           rel="noopener noreferrer"
         >
 
           <img
-            src="${safeUrl}"
+            src="${thumbnail}"
             alt="Scrin screenshot at ${escapeHtml(time)}"
             loading="lazy"
             referrerpolicy="no-referrer"
@@ -2763,9 +3798,7 @@ function shot(time,app,level,imageUrl){
             onerror="
               this.style.display='none';
               this.parentElement.innerHTML=
-              '<div class=&quot;empty&quot; style=&quot;padding:24px&quot;>
-                Screenshot image could not be loaded.
-              </div>';
+              '<div class=&quot;empty&quot; style=&quot;padding:24px&quot;>Screenshot image could not be loaded.</div>';
             "
           >
 
@@ -2794,12 +3827,14 @@ function shot(time,app,level,imageUrl){
         </div>
         `;
 
+
   return `
     <div class="shot">
 
       <div class="shot-img">
         ${image}
       </div>
+
 
       <div class="shot-meta">
 
@@ -2814,8 +3849,11 @@ function shot(time,app,level,imageUrl){
         <span class="small">
 
           Activity level
-          ${level??'—'}%
-          · Scrin evidence
+          ${level ?? '—'}%
+
+          ·
+
+          Scrin evidence
 
         </span>
 
@@ -2825,9 +3863,1581 @@ function shot(time,app,level,imageUrl){
   `;
 }
 
+
+/* ==========================================================
+   SCREENSHOT VIEW
+   ========================================================== */
+
+function screenshotView(e){
+
+  const summary =
+    e.daySummary
+    ||
+    null;
+
+
+  const selectedDate =
+    summary?.date
+    ||
+    '2026-09-18';
+
+
+  const sessionsMarkup =
+    summary?.sessions?.length
+
+      ? `
+        <div
+          class="context-box"
+          style="margin:0 0 16px"
+        >
+
+          <h4>
+            Tracked work sessions
+          </h4>
+
+          <p>
+
+            ${
+              summary.sessions
+
+                .map(
+                  session =>
+                    `${escapeHtml(session.from)}–${escapeHtml(session.to)} (${hoursLabel(session.seconds/3600)})`
+                )
+
+                .join(' · ')
+            }
+
+          </p>
+
+        </div>
+        `
+
+      : '';
+
+
+  const summaryMarkup =
+    summary
+
+      ? `
+        <div
+          class="grid metrics"
+          style="margin:16px 0"
+        >
+
+          ${
+            metric(
+              'First tracked',
+              escapeHtml(
+                summary.firstTracked
+                ||
+                '—'
+              ),
+              'Start of recorded work'
+            )
+          }
+
+          ${
+            metric(
+              'Last tracked',
+              escapeHtml(
+                summary.lastTracked
+                ||
+                '—'
+              ),
+              'End of recorded work'
+            )
+          }
+
+          ${
+            metric(
+              'Recorded time',
+
+              hoursLabel(
+                Number(
+                  summary.trackedSeconds
+                  ||
+                  0
+                )
+                /
+                3600
+              ),
+
+              'Overlapping intervals reconciled'
+            )
+          }
+
+          ${
+            metric(
+              'Screenshots',
+
+              Number(
+                summary.screenshotCount
+                ||
+                0
+              ),
+
+              'Evidence captures returned'
+            )
+          }
+
+        </div>
+
+        ${sessionsMarkup}
+
+        <div
+          class="small"
+          style="
+            margin-bottom:14px;
+            opacity:.72
+          "
+        >
+
+          Times shown using
+
+          ${escapeHtml(
+            summary.timezone
+            ||
+            e.timezone
+            ||
+            'the employee timezone'
+          )}.
+
+        </div>
+        `
+
+      : `
+        <div
+          class="callout"
+          style="margin:16px 0"
+        >
+
+          <strong>
+            Workday summary
+          </strong>
+
+          Select a date
+          and click
+
+          <b>
+            Load complete day from Scrin
+          </b>
+
+          to display first tracked time,
+          last tracked time,
+          recorded hours,
+          tracked sessions
+          and all available screenshots.
+
+        </div>
+        `;
+
+
+  return `
+    <div class="toolbar">
+
+      <div class="field">
+
+        <label>
+          Date
+        </label>
+
+        <input
+          id="screenDate"
+          type="date"
+          value="${escapeHtml(selectedDate)}"
+        >
+
+      </div>
+
+
+      <div class="field">
+
+        <label>
+          Project
+        </label>
+
+        <select>
+
+          <option>
+            All projects
+          </option>
+
+          ${
+            (e.workstreams||[]).map(
+              item => `
+              <option>
+                ${escapeHtml(item[0])}
+              </option>
+              `
+            ).join('')
+          }
+
+        </select>
+
+      </div>
+
+
+      <div class="field">
+
+        <label>
+          Application
+        </label>
+
+        <select>
+
+          <option>
+            All apps & URLs
+          </option>
+
+          ${
+            (e.apps||[]).map(
+              item => `
+              <option>
+                ${escapeHtml(item[0])}
+              </option>
+              `
+            ).join('')
+          }
+
+        </select>
+
+      </div>
+
+
+      <div class="spacer"></div>
+
+
+      <button
+        class="btn primary"
+        id="loadLiveDay"
+      >
+        Load complete day from Scrin
+      </button>
+
+    </div>
+
+
+    ${summaryMarkup}
+
+
+    <div class="banner">
+
+      <div>
+
+        <div class="big">
+          Daily screenshot evidence
+        </div>
+
+        <div class="muted">
+
+          ${
+            summary
+
+              ? `${summary.screenshotCount} available evidence capture(s) loaded for ${summary.date}.`
+
+              : 'Load a workday to inspect all available evidence captures.'
+          }
+
+        </div>
+
+      </div>
+
+
+      <span class="status blue">
+
+        <span class="dot"></span>
+
+        ${escapeHtml(
+          e.connectionName
+          ||
+          'Scrin evidence'
+        )}
+
+      </span>
+
+    </div>
+
+
+    <div id="shotArea">
+
+      <div class="shot-grid">
+
+        ${
+          (e.shots||[])
+
+            .map(
+              screenshot =>
+                shotCard(
+                  screenshot[0],
+                  screenshot[1],
+                  screenshot[2],
+                  screenshot[3],
+                  screenshot[4]
+                )
+            )
+
+            .join('')
+
+          ||
+
+          `
+          <div class="empty">
+            No screenshot evidence loaded.
+          </div>
+          `
+        }
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+/* ==========================================================
+   LOAD COMPLETE DAY
+   ========================================================== */
+
+async function loadLiveDay(){
+
+  const e =
+    employee();
+
+
+  const date =
+    document
+      .getElementById(
+        'screenDate'
+      )
+      ?.value;
+
+
+  if(
+    !e
+    ||
+    !date
+  ){
+    return;
+  }
+
+
+  if(
+    state.mode !== 'LIVE'
+  ){
+
+    toast(
+      'Live Scrin connection is required to load daily evidence.'
+    );
+
+    return;
+  }
+
+
+  const area =
+    document.getElementById(
+      'shotArea'
+    );
+
+
+  if(area){
+
+    area.innerHTML =
+      `
+      <div class="empty">
+        Loading the complete Scrin workday…
+      </div>
+      `;
+  }
+
+
+  try {
+
+    const offset =
+      Number(
+        e.timezoneOffsetMinutes
+        ||
+        0
+      );
+
+
+    const range =
+      dayEpochRange(
+        date,
+        offset
+      );
+
+
+    /* ----------------------------------
+       LOAD ALL ACTIVITIES
+       ---------------------------------- */
+
+    const activityResponse =
+      await fetch(
+        '/api/scrin/activities',
+        {
+          method: 'POST',
+
+          headers: {
+            'Content-Type':
+              'application/json'
+          },
+
+          body:
+            JSON.stringify({
+
+              connectionId:
+                e.connectionId,
+
+              ranges: [
+                {
+                  employmentId:
+                    String(
+                      e.employmentId
+                    ),
+
+                  from:
+                    range.from,
+
+                  to:
+                    range.to
+                }
+              ]
+            })
+        }
+      );
+
+
+    const activityData =
+      await activityResponse.json();
+
+
+    if(
+      !activityResponse.ok
+    ){
+
+      throw new Error(
+        activityData.error
+        ||
+        'Could not load activities'
+      );
+    }
+
+
+    const activities =
+      Array.isArray(
+        activityData.activities
+      )
+        ? activityData.activities
+        : [];
+
+
+    const activityIds =
+      [
+        ...new Set(
+          activities
+
+            .map(
+              activity =>
+                activity.id
+            )
+
+            .filter(Boolean)
+        )
+      ];
+
+
+    /* ----------------------------------
+       LOAD ALL SCREENSHOTS IN BATCHES
+       ---------------------------------- */
+
+    let screenshots =
+      [];
+
+
+    for(
+      let i=0;
+      i<activityIds.length;
+      i+=100
+    ){
+
+      const batch =
+        activityIds.slice(
+          i,
+          i+100
+        );
+
+
+      const screenshotResponse =
+        await fetch(
+          '/api/scrin/screenshots',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+
+            body:
+              JSON.stringify({
+
+                connectionId:
+                  e.connectionId,
+
+                activityIds:
+                  batch
+              })
+          }
+        );
+
+
+      const screenshotData =
+        await screenshotResponse.json();
+
+
+      if(
+        !screenshotResponse.ok
+      ){
+
+        throw new Error(
+          screenshotData.error
+          ||
+          'Could not load screenshots'
+        );
+      }
+
+
+      if(
+        Array.isArray(
+          screenshotData.screenshots
+        )
+      ){
+
+        screenshots.push(
+          ...screenshotData.screenshots
+        );
+      }
+    }
+
+
+    /* ----------------------------------
+       REMOVE DUPLICATES
+       ---------------------------------- */
+
+    const unique =
+      new Map();
+
+
+    screenshots.forEach(
+      screenshot => {
+
+        const key =
+          screenshot.id
+
+          ||
+
+          (
+            `${screenshot.activityId}-`
+            +
+            `${screenshot.taken}`
+          );
+
+
+        unique.set(
+          key,
+          screenshot
+        );
+      }
+    );
+
+
+    screenshots =
+      [
+        ...unique.values()
+      ]
+
+      .sort(
+        (a,b) =>
+          Number(
+            a.taken
+            ||
+            0
+          )
+          -
+          Number(
+            b.taken
+            ||
+            0
+          )
+      );
+
+
+    /* ----------------------------------
+       STORE FULL SCREENSHOT GALLERY
+       ---------------------------------- */
+
+    e.shots =
+      screenshots.map(
+        screenshot => [
+
+          timeLabel(
+            screenshot.taken,
+            offset
+          ),
+
+          screenshotApplication(
+            screenshot
+          ),
+
+          Number(
+            screenshot.activityLevel
+          )
+          ||
+          null,
+
+          screenshot.thumbUrl
+          ||
+          screenshot.url
+          ||
+          null,
+
+          screenshot.url
+          ||
+          screenshot.thumbUrl
+          ||
+          null
+        ]
+      );
+
+
+    /* ----------------------------------
+       WORKDAY SUMMARY
+       ---------------------------------- */
+
+    const intervals =
+      validIntervals(
+        activities
+      );
+
+
+    const firstTracked =
+      intervals.length
+        ? intervals[0][0]
+        : null;
+
+
+    const lastTracked =
+      intervals.length
+
+        ? Math.max(
+            ...intervals.map(
+              interval =>
+                interval[1]
+            )
+          )
+
+        : null;
+
+
+    const sessions =
+      workSessions(
+        activities
+      )
+
+      .map(
+        session => ({
+
+          from:
+            timeLabel(
+              session[0],
+              offset
+            ),
+
+          to:
+            timeLabel(
+              session[1],
+              offset
+            ),
+
+          seconds:
+            session[1]
+            -
+            session[0]
+        })
+      );
+
+
+    e.daySummary = {
+
+      date,
+
+      firstTracked:
+        timeLabel(
+          firstTracked,
+          offset
+        ),
+
+      lastTracked:
+        timeLabel(
+          lastTracked,
+          offset
+        ),
+
+      trackedSeconds:
+        unionTrackedSeconds(
+          activities
+        ),
+
+      screenshotCount:
+        screenshots.length,
+
+      activityCount:
+        intervals.length,
+
+      sessions,
+
+      timezone:
+        e.timezone
+        ||
+        'Employee timezone'
+    };
+
+
+    saveEmployees();
+
+    render();
+
+
+  } catch(error){
+
+    toast(
+      `Could not load the complete workday: ${error.message}`
+    );
+  }
+}
+
+
+/* ==========================================================
+   MONITORING POLICY
+   ========================================================== */
+
+function defaultMonitoringPolicy(){
+
+  return {
+    enabled:
+      true,
+
+    mode:
+      'hourly',
+
+    screenshotsPerHour:
+      12,
+
+    dailyTarget:
+      96,
+
+    expectedDayHours:
+      8,
+
+    activityTracking:
+      true,
+
+    appUrlTracking:
+      true,
+
+    autoPauseMinutes:
+      5,
+
+    employeeNotification:
+      true,
+
+    providerSyncStatus:
+      'Saved in WGM · provider write not connected'
+  };
+}
+
+
+function monitoringPolicy(e){
+
+  if(
+    !e.monitoringPolicy
+  ){
+
+    e.monitoringPolicy =
+      defaultMonitoringPolicy();
+
+    saveEmployees();
+  }
+
+  return e.monitoringPolicy;
+}
+
+
+function canEditMonitoringPolicy(){
+
+  return (
+    state.role === 'owner'
+    ||
+    state.role === 'employer'
+  );
+}
+
+
+function monitoringPolicyView(e){
+
+  const policy =
+    monitoringPolicy(e);
+
+
+  const editable =
+    canEditMonitoringPolicy();
+
+
+  const disabled =
+    editable
+      ? ''
+      : 'disabled';
+
+
+  const expectedDayHours =
+    Number(
+      policy.expectedDayHours
+      ||
+      8
+    );
+
+
+  const hourlyEquivalent =
+    policy.mode === 'daily'
+
+      ? (
+          Number(
+            policy.dailyTarget
+            ||
+            0
+          )
+          /
+          Math.max(
+            expectedDayHours,
+            0.5
+          )
+        )
+
+      : Number(
+          policy.screenshotsPerHour
+          ||
+          0
+        );
+
+
+  const estimatedDaily =
+    policy.mode === 'daily'
+
+      ? Number(
+          policy.dailyTarget
+          ||
+          0
+        )
+
+      : Math.round(
+          Number(
+            policy.screenshotsPerHour
+            ||
+            0
+          )
+          *
+          expectedDayHours
+        );
+
+
+  return `
+    <div class="grid two-col">
+
+      <div>
+
+        <div class="panel-title">
+          Monitoring Policy
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Screenshot capture
+          </label>
+
+          <select
+            id="policyEnabled"
+            ${disabled}
+          >
+
+            <option
+              value="true"
+              ${
+                policy.enabled
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Enabled
+            </option>
+
+            <option
+              value="false"
+              ${
+                !policy.enabled
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Disabled
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Capture mode
+          </label>
+
+          <select
+            id="policyMode"
+            ${disabled}
+          >
+
+            <option
+              value="hourly"
+              ${
+                policy.mode==='hourly'
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Screenshots per tracked hour
+            </option>
+
+            <option
+              value="daily"
+              ${
+                policy.mode==='daily'
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Daily screenshot target
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div
+          class="field"
+          id="policyHourlyWrap"
+          style="${
+            policy.mode==='hourly'
+              ? ''
+              : 'display:none'
+          }"
+        >
+
+          <label>
+            Screenshots per tracked hour
+          </label>
+
+          <input
+            id="policyShotsPerHour"
+            type="number"
+            min="1"
+            max="30"
+            step="1"
+            value="${
+              Number(
+                policy.screenshotsPerHour
+                ||
+                12
+              )
+            }"
+            ${disabled}
+          >
+
+        </div>
+
+
+        <div
+          class="field"
+          id="policyDailyWrap"
+          style="${
+            policy.mode==='daily'
+              ? ''
+              : 'display:none'
+          }"
+        >
+
+          <label>
+            Desired screenshots per workday
+          </label>
+
+          <input
+            id="policyDailyTarget"
+            type="number"
+            min="1"
+            step="1"
+            value="${
+              Number(
+                policy.dailyTarget
+                ||
+                96
+              )
+            }"
+            ${disabled}
+          >
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Expected workday hours
+          </label>
+
+          <input
+            id="policyExpectedDayHours"
+            type="number"
+            min="0.5"
+            max="24"
+            step="0.5"
+            value="${
+              Number(
+                policy.expectedDayHours
+                ||
+                8
+              )
+            }"
+            ${disabled}
+          >
+
+        </div>
+
+      </div>
+
+
+      <div>
+
+        <div class="panel-title">
+          Evidence Controls
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Activity level tracking
+          </label>
+
+          <select
+            id="policyActivity"
+            ${disabled}
+          >
+
+            <option
+              value="true"
+              ${
+                policy.activityTracking
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Enabled
+            </option>
+
+            <option
+              value="false"
+              ${
+                !policy.activityTracking
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Disabled
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Apps & URLs
+          </label>
+
+          <select
+            id="policyApps"
+            ${disabled}
+          >
+
+            <option
+              value="true"
+              ${
+                policy.appUrlTracking
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Enabled
+            </option>
+
+            <option
+              value="false"
+              ${
+                !policy.appUrlTracking
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Disabled
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Auto-pause after inactivity
+          </label>
+
+          <input
+            id="policyAutoPause"
+            type="number"
+            min="0"
+            max="120"
+            step="1"
+            value="${
+              Number(
+                policy.autoPauseMinutes
+                ||
+                0
+              )
+            }"
+            ${disabled}
+          >
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Employee screenshot notification
+          </label>
+
+          <select
+            id="policyNotification"
+            ${disabled}
+          >
+
+            <option
+              value="true"
+              ${
+                policy.employeeNotification
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Enabled
+            </option>
+
+            <option
+              value="false"
+              ${
+                !policy.employeeNotification
+                  ? 'selected'
+                  : ''
+              }
+            >
+              Disabled
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="context-box">
+
+          <h4>
+            Current WGM target
+          </h4>
+
+          <p
+            id="policyEstimate"
+          >
+
+            ${
+              policy.mode==='daily'
+
+                ? (
+                    `${estimatedDaily} screenshots/day`
+                    +
+                    ` ≈ ${hourlyEquivalent.toFixed(2)} per tracked hour`
+                  )
+
+                : (
+                    `${Number(policy.screenshotsPerHour||0)} screenshots/hour`
+                    +
+                    ` ≈ ${estimatedDaily} over a ${expectedDayHours}-hour day`
+                  )
+            }
+
+          </p>
+
+        </div>
+
+
+        <div class="context-box">
+
+          <h4>
+            Provider synchronization
+          </h4>
+
+          <p>
+
+            ${escapeHtml(
+              policy.providerSyncStatus
+              ||
+              'Saved in WGM · provider write not connected'
+            )}
+
+          </p>
+
+          <p class="small">
+
+            WGM currently stores
+            the desired monitoring policy.
+
+            It does not claim
+            that Scrin has been changed
+            until a supported provider-write
+            integration is connected.
+
+          </p>
+
+        </div>
+
+
+        ${
+          editable
+
+            ? `
+              <button
+                class="btn gold"
+                id="saveMonitoringPolicy"
+              >
+                Save Monitoring Policy
+              </button>
+              `
+
+            : `
+              <div class="small">
+
+                You can view this policy
+                but cannot change it
+                from this role.
+
+              </div>
+              `
+        }
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+function updatePolicyEstimate(){
+
+  const mode =
+    document
+      .getElementById(
+        'policyMode'
+      )
+      ?.value
+
+    ||
+
+    'hourly';
+
+
+  const hourlyWrap =
+    document.getElementById(
+      'policyHourlyWrap'
+    );
+
+
+  const dailyWrap =
+    document.getElementById(
+      'policyDailyWrap'
+    );
+
+
+  if(hourlyWrap){
+
+    hourlyWrap.style.display =
+      mode==='hourly'
+        ? ''
+        : 'none';
+  }
+
+
+  if(dailyWrap){
+
+    dailyWrap.style.display =
+      mode==='daily'
+        ? ''
+        : 'none';
+  }
+
+
+  const hours =
+    Math.max(
+      0.5,
+
+      Number(
+        document
+          .getElementById(
+            'policyExpectedDayHours'
+          )
+          ?.value
+        ||
+        8
+      )
+    );
+
+
+  const hourly =
+    Math.max(
+      1,
+
+      Math.min(
+        30,
+
+        Number(
+          document
+            .getElementById(
+              'policyShotsPerHour'
+            )
+            ?.value
+          ||
+          12
+        )
+      )
+    );
+
+
+  const daily =
+    Math.max(
+      1,
+
+      Number(
+        document
+          .getElementById(
+            'policyDailyTarget'
+          )
+          ?.value
+        ||
+        96
+      )
+    );
+
+
+  const estimate =
+    document.getElementById(
+      'policyEstimate'
+    );
+
+
+  if(!estimate){
+    return;
+  }
+
+
+  estimate.textContent =
+    mode==='daily'
+
+      ? (
+          `${daily} screenshots/day`
+          +
+          ` ≈ ${(daily/hours).toFixed(2)} per tracked hour`
+        )
+
+      : (
+          `${hourly} screenshots/hour`
+          +
+          ` ≈ ${Math.round(hourly*hours)} over a ${hours}-hour day`
+        );
+}
+
+
+function saveMonitoringPolicy(){
+
+  const e =
+    employee();
+
+
+  if(
+    !e
+    ||
+    !canEditMonitoringPolicy()
+  ){
+    return;
+  }
+
+
+  e.monitoringPolicy = {
+
+    enabled:
+      document
+        .getElementById(
+          'policyEnabled'
+        )
+        ?.value
+      ===
+      'true',
+
+    mode:
+      document
+        .getElementById(
+          'policyMode'
+        )
+        ?.value
+      ||
+      'hourly',
+
+    screenshotsPerHour:
+      Math.max(
+        1,
+
+        Math.min(
+          30,
+
+          Number(
+            document
+              .getElementById(
+                'policyShotsPerHour'
+              )
+              ?.value
+            ||
+            12
+          )
+        )
+      ),
+
+    dailyTarget:
+      Math.max(
+        1,
+
+        Number(
+          document
+            .getElementById(
+              'policyDailyTarget'
+            )
+            ?.value
+          ||
+          96
+        )
+      ),
+
+    expectedDayHours:
+      Math.max(
+        0.5,
+
+        Number(
+          document
+            .getElementById(
+              'policyExpectedDayHours'
+            )
+            ?.value
+          ||
+          8
+        )
+      ),
+
+    activityTracking:
+      document
+        .getElementById(
+          'policyActivity'
+        )
+        ?.value
+      ===
+      'true',
+
+    appUrlTracking:
+      document
+        .getElementById(
+          'policyApps'
+        )
+        ?.value
+      ===
+      'true',
+
+    autoPauseMinutes:
+      Math.max(
+        0,
+
+        Number(
+          document
+            .getElementById(
+              'policyAutoPause'
+            )
+            ?.value
+          ||
+          0
+        )
+      ),
+
+    employeeNotification:
+      document
+        .getElementById(
+          'policyNotification'
+        )
+        ?.value
+      ===
+      'true',
+
+    providerSyncStatus:
+      'Saved in WGM · provider write not connected'
+  };
+
+
+  saveEmployees();
+
+
+  toast(
+    'Monitoring policy saved in WGM. Scrin provider write is not connected yet.'
+  );
+}
+
+
+/* ==========================================================
+   CONTEXT
+   ========================================================== */
+
 function contextView(e){
 
-  const employerControl =
+  const employerField =
     e.employerLocked
 
       ? `
@@ -2849,6 +5459,7 @@ function contextView(e){
         >
         `;
 
+
   return `
     <div class="grid two-col">
 
@@ -2858,15 +5469,17 @@ function contextView(e){
           Permanent work profile
         </div>
 
+
         <div class="field">
 
           <label>
             WGM employer
           </label>
 
-          ${employerControl}
+          ${employerField}
 
         </div>
+
 
         <div class="field">
 
@@ -2884,6 +5497,7 @@ function contextView(e){
 
         </div>
 
+
         <div class="field">
 
           <label>
@@ -2896,6 +5510,7 @@ function contextView(e){
           >
 
         </div>
+
 
         <div class="field">
 
@@ -2912,11 +5527,13 @@ function contextView(e){
 
       </div>
 
+
       <div>
 
         <div class="panel-title">
           Monthly context
         </div>
+
 
         <div class="field">
 
@@ -2924,11 +5541,12 @@ function contextView(e){
             Context / approved adjustments
           </label>
 
-          <textarea id="contextText">${
-            escapeHtml(e.context||'')
-          }</textarea>
+          <textarea
+            id="contextText"
+          >${escapeHtml(e.context||'')}</textarea>
 
         </div>
+
 
         <button
           class="btn primary"
@@ -2943,17 +5561,140 @@ function contextView(e){
   `;
 }
 
-function reports(){
 
-  const emps =
-    visibleEmployees();
+function saveContext(){
+
+  const e =
+    employee();
+
+
+  if(!e){
+    return;
+  }
+
 
   if(
-    state.role==='employee'
+    !e.employerLocked
+  ){
+
+    e.employer =
+      document
+        .getElementById(
+          'contextEmployer'
+        )
+        ?.value
+        .trim()
+
+      ||
+
+      e.employer;
+  }
+
+
+  e.expectedHours =
+    Number(
+      document
+        .getElementById(
+          'contextExpected'
+        )
+        ?.value
+
+      ||
+
+      e.expectedHours
+
+      ||
+
+      0
+    );
+
+
+  e.timezone =
+    document
+      .getElementById(
+        'contextTimezone'
+      )
+      ?.value
+      .trim()
+
+    ||
+
+    e.timezone;
+
+
+  e.schedule =
+    document
+      .getElementById(
+        'contextSchedule'
+      )
+      ?.value
+      .trim()
+
+    ||
+
+    e.schedule;
+
+
+  e.context =
+    document
+      .getElementById(
+        'contextText'
+      )
+      ?.value
+      .trim()
+
+    ||
+
+    '';
+
+
+  saveEmployees();
+
+
+  toast(
+    'Employee baseline and context saved.'
+  );
+}
+
+
+/* ==========================================================
+   REPORT CENTER
+   ========================================================== */
+
+function periodLabel(){
+
+  const date =
+    new Date(
+      state.reportPeriod.from
+      +
+      'T00:00:00Z'
+    );
+
+
+  return date.toLocaleString(
+    'en-US',
+    {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }
+  );
+}
+
+
+function reports(){
+
+  const employees =
+    visibleEmployees();
+
+
+  if(
+    state.role === 'employee'
   ){
 
     const e =
       employee();
+
 
     return shell(
       `
@@ -2966,12 +5707,17 @@ function reports(){
           </h2>
 
           <p>
-            Only reports released for your own record are shown.
+
+            Only reports available
+            for your own record
+            are shown.
+
           </p>
 
         </div>
 
       </div>
+
 
       <div class="card panel">
 
@@ -2987,6 +5733,7 @@ function reports(){
             </tr>
 
           </thead>
+
 
           <tbody>
 
@@ -3020,8 +5767,9 @@ function reports(){
     );
   }
 
+
   if(
-    state.role==='employer'
+    state.role === 'employer'
   ){
 
     return shell(
@@ -3035,13 +5783,21 @@ function reports(){
           </h2>
 
           <p>
-            Released reports for
-            ${escapeHtml(state.portalEmployer||'your company')}
-            are shown here.
-            New report requests still pass through White Glove review.
+
+            Reports for
+
+            ${escapeHtml(
+              state.portalEmployer
+              ||
+              'your company'
+            )}
+
+            appear here.
+
           </p>
 
         </div>
+
 
         <button
           class="btn primary"
@@ -3051,6 +5807,7 @@ function reports(){
         </button>
 
       </div>
+
 
       <div class="card panel">
 
@@ -3067,10 +5824,11 @@ function reports(){
 
           </thead>
 
+
           <tbody>
 
             ${
-              emps.map(
+              employees.map(
                 e => `
                 <tr>
 
@@ -3088,11 +5846,17 @@ function reports(){
 
                   <td>
 
-                    <span class="status ${statusClass(e.reportingStatus)}">
+                    <span
+                      class="status ${statusClass(e.reportingStatus)}"
+                    >
 
                       <span class="dot"></span>
 
-                      ${escapeHtml(e.reportingStatus||'Synced')}
+                      ${escapeHtml(
+                        e.reportingStatus
+                        ||
+                        'Synced'
+                      )}
 
                     </span>
 
@@ -3113,6 +5877,7 @@ function reports(){
     );
   }
 
+
   return shell(
     `
     <div class="header-row">
@@ -3124,11 +5889,16 @@ function reports(){
         </h2>
 
         <p>
-          Generate reports across any connected source
-          after employer mapping and evidence reconciliation.
+
+          Generate reports
+          across connected sources
+          after employer mapping
+          and evidence reconciliation.
+
         </p>
 
       </div>
+
 
       <button
         class="btn"
@@ -3139,6 +5909,7 @@ function reports(){
 
     </div>
 
+
     <div class="card panel">
 
       <div class="panel-title">
@@ -3146,10 +5917,16 @@ function reports(){
       </div>
 
       <div class="panel-sub">
-        Objective metrics come from the employee's own source connection.
+
+        Objective metrics come
+        from the employee's source connection.
+
         AI drafts interpretation.
+
         Human review remains mandatory.
+
       </div>
+
 
       <div class="toolbar">
 
@@ -3167,6 +5944,7 @@ function reports(){
 
         </div>
 
+
         <div class="field">
 
           <label>
@@ -3181,44 +5959,59 @@ function reports(){
 
         </div>
 
+
         <div class="field">
 
           <label>
             Employee
           </label>
 
-          <select id="reportEmployee">
+          <select
+            id="reportEmployee"
+          >
 
             ${
-              emps.map(
-                x => `
+              employees.map(
+                e => `
                 <option
-                  value="${escapeHtml(x.id)}"
+                  value="${escapeHtml(e.id)}"
                   ${
-                    x.id===state.selectedEmployeeId
+                    e.id===state.selectedEmployeeId
                       ? 'selected'
                       : ''
                   }
                 >
-                  ${escapeHtml(x.name)}
+
+                  ${escapeHtml(e.name)}
+
                   —
-                  ${escapeHtml(x.employer||'Unassigned')}
+
+                  ${escapeHtml(e.employer||'Unassigned')}
+
                   —
-                  ${escapeHtml(x.connectionName||'Scrin')}
+
+                  ${escapeHtml(e.connectionName||'Scrin')}
+
                 </option>
                 `
               ).join('')
             }
 
+
             <option value="__ALL__">
-              All mapped employees (${emps.length})
+
+              All mapped employees
+              (${employees.length})
+
             </option>
 
           </select>
 
         </div>
 
+
         <div class="spacer"></div>
+
 
         <button
           id="generateBtn"
@@ -3231,6 +6024,7 @@ function reports(){
 
     </div>
 
+
     <div
       class="card panel"
       style="margin-top:16px"
@@ -3239,6 +6033,7 @@ function reports(){
       <div class="panel-title">
         Current reportable population
       </div>
+
 
       <table>
 
@@ -3254,23 +6049,24 @@ function reports(){
 
         </thead>
 
+
         <tbody>
 
           ${
-            emps.map(
-              x => `
+            employees.map(
+              e => `
               <tr>
 
                 <td>
-                  ${escapeHtml(x.name)}
+                  ${escapeHtml(e.name)}
                 </td>
 
                 <td>
-                  ${escapeHtml(x.employer||'Unassigned')}
+                  ${escapeHtml(e.employer||'Unassigned')}
                 </td>
 
                 <td>
-                  ${escapeHtml(x.connectionName||'Scrin')}
+                  ${escapeHtml(e.connectionName||'Scrin')}
                 </td>
 
                 <td>
@@ -3284,6 +6080,7 @@ function reports(){
                         ? 'Live'
                         : 'Demo'
                     }
+
                     ready
 
                   </span>
@@ -3293,10 +6090,12 @@ function reports(){
                 <td>
 
                   ${
-                    state.reportEmployeeId===x.id
+                    state.reportEmployeeId===e.id
 
                       ? `
-                        <span class="status ${statusClass(state.reportStatus)}">
+                        <span
+                          class="status ${statusClass(state.reportStatus)}"
+                        >
 
                           <span class="dot"></span>
 
@@ -3325,12 +6124,308 @@ function reports(){
   );
 }
 
+
+/* ==========================================================
+   GENERATE REPORT
+   ========================================================== */
+
+async function generateReport(){
+
+  const selector =
+    document.getElementById(
+      'reportEmployee'
+    );
+
+
+  const id =
+    selector?.value
+    ||
+    state.selectedEmployeeId;
+
+
+  state.reportPeriod = {
+
+    from:
+      document
+        .getElementById(
+          'fromDate'
+        )
+        ?.value
+      ||
+      state.reportPeriod.from,
+
+    to:
+      document
+        .getElementById(
+          'toDate'
+        )
+        ?.value
+      ||
+      state.reportPeriod.to
+  };
+
+
+  if(
+    id === '__ALL__'
+  ){
+
+    toast(
+      'Batch report generation is the next reporting milestone. Multi-source population selection is ready.'
+    );
+
+    return;
+  }
+
+
+  state.selectedEmployeeId =
+    id;
+
+
+  const e =
+    employeeById(
+      id
+    );
+
+
+  if(
+    !e
+    ||
+    e.excluded
+    ||
+    !e.employer
+  ){
+
+    toast(
+      'This employee must be mapped to an employer before report generation.'
+    );
+
+    return;
+  }
+
+
+  state.reportEmployeeId =
+    e.id;
+
+
+  state.reportStatus =
+    'Generating';
+
+
+  render();
+
+
+  try {
+
+    let verified = {
+
+      employee:
+        e,
+
+      period:
+        state.reportPeriod,
+
+      source: {
+        provider:
+          'scrin',
+
+        connectionId:
+          e.connectionId,
+
+        connectionName:
+          e.connectionName
+      }
+    };
+
+
+    if(
+      state.mode === 'LIVE'
+      &&
+      e.employmentId
+    ){
+
+      const periodResponse =
+        await fetch(
+          '/api/wgm/period-data',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+
+            body:
+              JSON.stringify({
+
+                connectionId:
+                  e.connectionId,
+
+                employmentId:
+                  e.employmentId,
+
+                from:
+                  state.reportPeriod.from,
+
+                to:
+                  state.reportPeriod.to,
+
+                timezoneOffsetMinutes:
+                  e.timezoneOffsetMinutes
+                  ||
+                  0,
+
+                expectedHours:
+                  Number(
+                    e.expectedHours
+                    ||
+                    0
+                  ),
+
+                includeScreenshots:
+                  true
+              })
+          }
+        );
+
+
+      const periodData =
+        await periodResponse.json();
+
+
+      if(
+        !periodResponse.ok
+      ){
+
+        throw new Error(
+          periodData.error
+          ||
+          'Could not load period data'
+        );
+      }
+
+
+      e.trackedHours =
+        periodData.metrics.trackedHours;
+
+
+      e.activeDays =
+        periodData.metrics.activeDays;
+
+
+      e.workstreams =
+        periodData.workstreams
+        ||
+        e.workstreams;
+
+
+      e.apps =
+        periodData.apps
+        ||
+        e.apps;
+
+
+      saveEmployees();
+
+
+      verified = {
+        ...verified,
+
+        verifiedMetrics:
+          periodData.metrics,
+
+        workstreams:
+          periodData.workstreams,
+
+        apps:
+          periodData.apps,
+
+        context:
+          e.context,
+
+        screenshotEvidence:
+          periodData.screenshotEvidenceSummary
+      };
+    }
+
+
+    const response =
+      await fetch(
+        '/api/reports/generate',
+        {
+          method: 'POST',
+
+          headers: {
+            'Content-Type':
+              'application/json'
+          },
+
+          body:
+            JSON.stringify(
+              verified
+            )
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if(
+      !response.ok
+    ){
+
+      throw new Error(
+        data.error
+        ||
+        'Report generation unavailable'
+      );
+    }
+
+
+    state.report =
+      data.report
+      ||
+      defaultReport;
+
+
+  } catch(error){
+
+    state.report =
+      defaultReport;
+
+
+    toast(
+      `Using prototype narrative: ${error.message}`
+    );
+  }
+
+
+  state.reportStatus =
+    'Draft ready';
+
+
+  state.page =
+    'review';
+
+
+  render();
+}
+
+
+/* ==========================================================
+   REVIEW QUEUE
+   ========================================================== */
+
 function review(){
 
   const e =
-    employeeById(state.reportEmployeeId)
+    employeeById(
+      state.reportEmployeeId
+    )
     ||
     employee();
+
 
   return shell(
     `
@@ -3343,11 +6438,16 @@ function review(){
         </h2>
 
         <p>
-          Green reports may be batch approved;
-          Yellow and Red require individual review.
+
+          Green reports may be batch approved.
+
+          Yellow and Red
+          require individual review.
+
         </p>
 
       </div>
+
 
       <div class="actions">
 
@@ -3369,6 +6469,7 @@ function review(){
 
     </div>
 
+
     <div
       class="card panel"
       style="margin-bottom:16px"
@@ -3382,12 +6483,16 @@ function review(){
 
     </div>
 
+
     ${
       state.reportStatus==='Not generated'
 
         ? `
           <div class="card empty">
-            Generate a report to open the full review console.
+
+            Generate a report
+            to open the full review console.
+
           </div>
           `
 
@@ -3398,15 +6503,19 @@ function review(){
   );
 }
 
+
 function reviewConsole(e){
 
-  const r =
+  if(!e){
+    return '';
+  }
+
+
+  const report =
     state.report
     ||
     defaultReport;
 
-  const cov =
-    coverage(e);
 
   return `
     <div class="card panel">
@@ -3414,21 +6523,26 @@ function reviewConsole(e){
       <div class="employee-head">
 
         <div class="employee-avatar">
-          ${
-            escapeHtml(
-              e.initials
-              ||
-              initials(e.name)
-            )
-          }
+
+          ${escapeHtml(
+            e.initials
+            ||
+            initials(e.name)
+          )}
+
         </div>
+
 
         <div>
 
           <h2 style="margin:0">
+
             ${escapeHtml(e.name)}
+
             —
+
             ${periodLabel()}
+
           </h2>
 
           <div class="small">
@@ -3443,9 +6557,13 @@ function reviewConsole(e){
 
         </div>
 
+
         <div class="spacer"></div>
 
-        <span class="status ${statusClass(state.reportStatus)}">
+
+        <span
+          class="status ${statusClass(state.reportStatus)}"
+        >
 
           <span class="dot"></span>
 
@@ -3455,34 +6573,75 @@ function reviewConsole(e){
 
       </div>
 
+
       <div class="review-summary">
 
         <div class="review-stat">
-          <div class="k">Tracked</div>
-          <div class="v">${hoursLabel(e.trackedHours)}</div>
+
+          <div class="k">
+            Tracked
+          </div>
+
+          <div class="v">
+            ${hoursLabel(e.trackedHours)}
+          </div>
+
         </div>
 
-        <div class="review-stat">
-          <div class="k">Expected</div>
-          <div class="v">${e.expectedHours||'—'}h</div>
-        </div>
 
         <div class="review-stat">
-          <div class="k">Coverage</div>
-          <div class="v">${cov??'—'}%</div>
+
+          <div class="k">
+            Expected
+          </div>
+
+          <div class="v">
+            ${e.expectedHours||'—'}h
+          </div>
+
         </div>
 
-        <div class="review-stat">
-          <div class="k">Active days</div>
-          <div class="v">${e.activeDays||'—'}</div>
-        </div>
 
         <div class="review-stat">
-          <div class="k">Review flags</div>
-          <div class="v">${e.concerns||0}</div>
+
+          <div class="k">
+            Coverage
+          </div>
+
+          <div class="v">
+            ${coverage(e)??'—'}%
+          </div>
+
+        </div>
+
+
+        <div class="review-stat">
+
+          <div class="k">
+            Active days
+          </div>
+
+          <div class="v">
+            ${e.activeDays||'—'}
+          </div>
+
+        </div>
+
+
+        <div class="review-stat">
+
+          <div class="k">
+            Review flags
+          </div>
+
+          <div class="v">
+            ${e.concerns||0}
+          </div>
+
         </div>
 
       </div>
+
 
       <div class="grid two-col">
 
@@ -3492,15 +6651,16 @@ function reviewConsole(e){
             AI draft
           </div>
 
+
           <div class="review-text">
 
             <b>
-              ${escapeHtml(r.headline)}
+              ${escapeHtml(report.headline)}
             </b>
 
             <br><br>
 
-            ${escapeHtml(r.summary)}
+            ${escapeHtml(report.summary)}
 
             <br><br>
 
@@ -3508,7 +6668,7 @@ function reviewConsole(e){
               Integrity:
             </b>
 
-            ${escapeHtml(r.integrity)}
+            ${escapeHtml(report.integrity)}
 
             <br><br>
 
@@ -3516,17 +6676,19 @@ function reviewConsole(e){
               Coaching:
             </b>
 
-            ${escapeHtml(r.coaching)}
+            ${escapeHtml(report.coaching)}
 
           </div>
 
         </div>
+
 
         <div>
 
           <div class="panel-title">
             Reviewer checklist
           </div>
+
 
           <div class="checklist">
 
@@ -3538,29 +6700,32 @@ function reviewConsole(e){
                 'No unsupported performance conclusion',
                 'Client-facing language is appropriate'
               ]
+
               .map(
-                (c,i) => `
+                (check,index) => `
                 <label class="check">
 
                   <input
                     type="checkbox"
-                    data-check="${i}"
+                    data-check="${index}"
                     ${
-                      state.reviewerChecks[i]
+                      state.reviewerChecks[index]
                         ? 'checked'
                         : ''
                     }
                   >
 
-                  ${c}
+                  ${check}
 
                 </label>
                 `
               )
+
               .join('')
             }
 
           </div>
+
 
           <div class="actions">
 
@@ -3585,6 +6750,7 @@ function reviewConsole(e){
 
       </div>
 
+
       ${
         /Approved|Released/.test(
           state.reportStatus
@@ -3597,10 +6763,13 @@ function reviewConsole(e){
                 Approved for release
               </strong>
 
-              Release is bound to this employee,
-              employer and report version.
+              Release is bound
+              to this employee,
+              employer
+              and report version.
 
             </div>
+
 
             <div class="actions">
 
@@ -3618,7 +6787,9 @@ function reviewConsole(e){
 
                 ${
                   state.reportStatus==='Released'
+
                     ? 'Released · Delivery queued'
+
                     : 'Approve & Release'
                 }
 
@@ -3634,282 +6805,18 @@ function reviewConsole(e){
   `;
 }
 
-function periodLabel(){
 
-  const f =
-    new Date(
-      state.reportPeriod.from
-      +
-      'T00:00:00Z'
-    );
+/* ==========================================================
+   DATA SOURCES
+   ========================================================== */
 
-  return f.toLocaleString(
-    'en-US',
-    {
-      month:'long',
-      year:'numeric',
-      timeZone:'UTC'
-    }
-  );
-}
+function connectionTypeLabel(connection){
 
-function subscriptions(){
-
-  if(
-    state.role==='employer'
-  ){
-
-    const team =
-      portalEmployees();
-
-    return shell(
-      `
-      <div class="header-row">
-
-        <div>
-
-          <h2>
-            Billing
-          </h2>
-
-          <p>
-            Prototype of the Stripe-backed billing entry point.
-          </p>
-
-        </div>
-
-        <button class="btn primary">
-          Manage payment method
-        </button>
-
-      </div>
-
-      <div class="grid metrics">
-
-        ${
-          metric(
-            'Plan',
-            'WGM Monthly',
-            'Configurable in Stripe'
-          )
-        }
-
-        ${
-          metric(
-            'Paid seats',
-            Math.max(team.length,1),
-            'Contracted capacity'
-          )
-        }
-
-        ${
-          metric(
-            'Billing status',
-            'Active',
-            'Prototype state'
-          )
-        }
-
-        ${
-          metric(
-            'Next renewal',
-            'Oct 1, 2026',
-            'Hosted billing'
-          )
-        }
-
-      </div>
-
-      <div class="grid two-col">
-
-        <div class="card panel">
-
-          <div class="panel-title">
-            Subscription
-          </div>
-
-          <table>
-
-            <tbody>
-
-              <tr>
-                <th>Organization</th>
-                <td>${escapeHtml(state.portalEmployer||'Employer')}</td>
-              </tr>
-
-              <tr>
-                <th>Assigned employees</th>
-                <td>${team.length}</td>
-              </tr>
-
-              <tr>
-                <th>Payment method</th>
-                <td>•••• 4242</td>
-              </tr>
-
-              <tr>
-                <th>Cancellation</th>
-                <td>Not scheduled</td>
-              </tr>
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-        <div class="card panel">
-
-          <div class="panel-title">
-            Invoice history
-          </div>
-
-          <table>
-
-            <thead>
-
-              <tr>
-                <th>Invoice</th>
-                <th>Date</th>
-                <th>Status</th>
-              </tr>
-
-            </thead>
-
-            <tbody>
-
-              <tr>
-
-                <td>
-                  WGM-0003
-                </td>
-
-                <td>
-                  Sep 1, 2026
-                </td>
-
-                <td>
-
-                  <span class="status green">
-                    <span class="dot"></span>
-                    Paid
-                  </span>
-
-                </td>
-
-              </tr>
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-      </div>
-      `,
-      'Billing'
-    );
-  }
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          Subscriptions
-        </h2>
-
-        <p>
-          Prototype states for included WGH seats
-          and standalone paid organizations.
-        </p>
-
-      </div>
-
-    </div>
-
-    <div class="card panel">
-
-      <table>
-
-        <thead>
-
-          <tr>
-            <th>Company</th>
-            <th>Entitlement</th>
-            <th>Seats</th>
-            <th>Lifecycle state</th>
-          </tr>
-
-        </thead>
-
-        <tbody>
-
-          ${
-            mappedEmployers().map(
-              (c,i) => {
-
-                const count =
-                  activeEmployees().filter(
-                    e =>
-                      e.employer===c
-                  ).length;
-
-                return `
-                  <tr>
-
-                    <td>
-                      ${escapeHtml(c)}
-                    </td>
-
-                    <td>
-                      ${
-                        i===0
-                          ? 'WGH Included'
-                          : 'Standalone Paid'
-                      }
-                    </td>
-
-                    <td>
-                      ${count}
-                    </td>
-
-                    <td>
-
-                      <span class="status green">
-
-                        <span class="dot"></span>
-
-                        Active
-
-                      </span>
-
-                    </td>
-
-                  </tr>
-                `;
-              }
-            ).join('')
-          }
-
-        </tbody>
-
-      </table>
-
-    </div>
-    `,
-    'Subscriptions'
-  );
-}
-
-function connectionTypeLabel(c){
-
-  return c.type==='dedicated'
+  return connection.type==='dedicated'
     ? 'Dedicated Employer'
     : 'WGH Shared';
 }
+
 
 function connectionEmployeeCount(id){
 
@@ -3921,6 +6828,7 @@ function connectionEmployeeCount(id){
   ).length;
 }
 
+
 function dataSources(){
 
   const connections =
@@ -3930,17 +6838,28 @@ function dataSources(){
 
       : [
           {
-            id:'wgh-main',
-            name:'WGH Main Scrin Account',
-            provider:'scrin',
-            type:'shared',
-            employer:'',
+            id:
+              'wgh-main',
+
+            name:
+              'WGH Main Scrin Account',
+
+            provider:
+              'scrin',
+
+            type:
+              'shared',
+
+            employer:
+              '',
+
             status:
               state.mode==='LIVE'
                 ? 'connected'
                 : 'configured'
           }
         ];
+
 
   return shell(
     `
@@ -3953,11 +6872,15 @@ function dataSources(){
         </h2>
 
         <p>
-          Each Scrin API credential is a separate WGM connection
-          with an explicit ownership type.
+
+          Each Scrin API credential
+          is a separate WGM connection
+          with explicit employer ownership.
+
         </p>
 
       </div>
+
 
       <div class="actions">
 
@@ -3979,6 +6902,7 @@ function dataSources(){
 
     </div>
 
+
     ${
       state.showAddConnection
 
@@ -3993,10 +6917,14 @@ function dataSources(){
             </div>
 
             <div class="panel-sub">
+
               Prototype workflow.
-              API tokens remain server-side in Cloudflare
-              and are never entered into browser code.
+
+              API tokens remain
+              server-side in Cloudflare.
+
             </div>
+
 
             <div class="grid two-col">
 
@@ -4014,6 +6942,7 @@ function dataSources(){
                   >
 
                 </div>
+
 
                 <div class="field">
 
@@ -4037,6 +6966,7 @@ function dataSources(){
 
               </div>
 
+
               <div>
 
                 <div class="field">
@@ -4052,6 +6982,7 @@ function dataSources(){
 
                 </div>
 
+
                 <div class="context-box">
 
                   <h4>
@@ -4059,9 +6990,11 @@ function dataSources(){
                   </h4>
 
                   <p>
-                    Add the new token to the Cloudflare secret
-                    <b>SCRIN_CONNECTIONS_JSON</b>,
-                    then click Refresh / Sync All.
+
+                    Add additional API credentials
+                    through the server-side
+                    Scrin connection configuration.
+
                   </p>
 
                 </div>
@@ -4076,6 +7009,7 @@ function dataSources(){
         : ''
     }
 
+
     <div class="card panel">
 
       <div class="panel-title">
@@ -4083,10 +7017,16 @@ function dataSources(){
       </div>
 
       <div class="panel-sub">
-        Dedicated connections automatically lock every discovered employee
+
+        Dedicated connections
+        automatically lock employees
         to one employer.
-        Shared WGH connections require employee-level mapping.
+
+        Shared WGH connections
+        require employee-level mapping.
+
       </div>
+
 
       <table>
 
@@ -4102,56 +7042,73 @@ function dataSources(){
 
         </thead>
 
+
         <tbody>
 
           ${
             connections.map(
-              c => `
+              connection => `
               <tr>
 
                 <td>
 
                   <b>
-                    ${escapeHtml(c.name||c.id)}
+                    ${escapeHtml(connection.name||connection.id)}
                   </b>
 
                   <div class="small">
-                    ${escapeHtml(c.id)}
+                    ${escapeHtml(connection.id)}
                   </div>
 
                 </td>
 
                 <td>
-                  ${connectionTypeLabel(c)}
+                  ${connectionTypeLabel(connection)}
                 </td>
 
                 <td>
 
                   ${
-                    c.type==='dedicated'
-                      ? escapeHtml(c.employer||'Employer required')
+                    connection.type==='dedicated'
+
+                      ? escapeHtml(
+                          connection.employer
+                          ||
+                          'Employer required'
+                        )
+
                       : 'Employee-level mapping'
                   }
 
                 </td>
 
                 <td>
+
                   ${
-                    c.employeeCount
+                    connection.employeeCount
+
                     ??
-                    connectionEmployeeCount(c.id)
+
+                    connectionEmployeeCount(
+                      connection.id
+                    )
                   }
+
                 </td>
 
                 <td>
 
                   <span
-                    class="status ${statusClass(c.status||'configured')}"
+                    class="status ${statusClass(connection.status||'configured')}"
                   >
 
                     <span class="dot"></span>
 
-                    ${escapeHtml(c.status||'configured')}
+                    ${escapeHtml(
+                      connection.status
+                      ||
+                      'configured'
+                    )}
 
                   </span>
 
@@ -4165,6 +7122,7 @@ function dataSources(){
         </tbody>
 
       </table>
+
 
       <div
         class="actions"
@@ -4182,6 +7140,7 @@ function dataSources(){
 
     </div>
 
+
     <div
       class="grid two-col"
       style="margin-top:16px"
@@ -4194,15 +7153,15 @@ function dataSources(){
         </div>
 
         <p class="small">
-          Example:
-          a Michael Green Fine Homes Scrin connection
-          is permanently bound to Michael Green Fine Homes.
-          All employees imported from that connection
-          inherit that employer
-          and the mapping control is locked.
+
+          Every employee discovered
+          through a dedicated employer connection
+          inherits that employer automatically.
+
         </p>
 
       </div>
+
 
       <div class="card panel">
 
@@ -4211,16 +7170,18 @@ function dataSources(){
         </div>
 
         <p class="small">
-          A WGH master Scrin account can contain employees
-          serving different clients.
-          Every reportable employee must be mapped
-          to one employer
-          or marked Internal / Excluded.
+
+          Every employee
+          in a shared White Glove account
+          must be mapped to one employer
+          or explicitly excluded.
+
         </p>
 
       </div>
 
     </div>
+
 
     <div
       class="card panel"
@@ -4228,8 +7189,9 @@ function dataSources(){
     >
 
       <div class="panel-title">
-        Provider-independent evidence architecture
+        Provider-independent architecture
       </div>
+
 
       <div class="banner">
 
@@ -4241,22 +7203,35 @@ function dataSources(){
           >
 
             Scrin Connection(s)
+
             →
+
             WGM Evidence Layer
+
             →
+
             Analysis
+
             →
+
             AI Draft
+
             →
+
             Human Review
+
             →
+
             Employer Report
 
           </div>
 
           <div class="muted">
-            Future WGM Native Monitor uses the same evidence contract,
-            employer mapping and report engine.
+
+            Future WGM Native Monitor
+            plugs into the same evidence
+            and reporting layer.
+
           </div>
 
         </div>
@@ -4268,6 +7243,11 @@ function dataSources(){
     'Data Sources'
   );
 }
+
+
+/* ==========================================================
+   SETTINGS
+   ========================================================== */
 
 function settings(){
 
@@ -4282,13 +7262,18 @@ function settings(){
         </h2>
 
         <p>
+
           Map shared Scrin employees carefully.
-          Dedicated-connection employees are employer-locked.
+
+          Dedicated connection employees
+          remain employer-locked.
+
         </p>
 
       </div>
 
     </div>
+
 
     <div class="grid two-col">
 
@@ -4299,26 +7284,22 @@ function settings(){
         </div>
 
         <div class="panel-sub">
-          Multiple server-side Scrin connections are supported.
+
+          Multiple server-side
+          Scrin connections are supported.
+
         </div>
+
 
         <p class="small">
 
-          Current single-token fallback:
-
-          <b>
-            SCRIN_TOKEN
-          </b>.
-
-          Multi-account configuration:
-
-          <b>
-            SCRIN_CONNECTIONS_JSON
-          </b>.
-
-          Tokens never enter browser code or GitHub.
+          API credentials stay
+          in Cloudflare secrets
+          and never enter
+          this browser code.
 
         </p>
+
 
         <div class="actions">
 
@@ -4338,6 +7319,7 @@ function settings(){
 
         </div>
 
+
         <div
           id="scrinResult"
           class="small"
@@ -4348,6 +7330,7 @@ function settings(){
 
       </div>
 
+
       <div class="card panel">
 
         <div class="panel-title">
@@ -4355,26 +7338,22 @@ function settings(){
         </div>
 
         <div class="panel-sub">
-          Structured narrative from verified WGM calculations and context.
+
+          Structured narrative
+          from verified WGM calculations
+          and context.
+
         </div>
+
 
         <p class="small">
 
-          Set
-
-          <b>
-            OPENAI_API_KEY
-          </b>
-
-          and
-
-          <b>
-            OPENAI_MODEL
-          </b>
-
-          server-side when ready for live AI generation.
+          OPENAI_API_KEY
+          and OPENAI_MODEL
+          remain server-side.
 
         </p>
+
 
         <span class="status blue">
 
@@ -4388,6 +7367,7 @@ function settings(){
 
     </div>
 
+
     <div
       class="card panel"
       style="margin-top:16px"
@@ -4398,10 +7378,16 @@ function settings(){
       </div>
 
       <div class="panel-sub">
+
         This is the tenancy safety layer.
-        A shared connection needs employee-level mapping.
-        A dedicated connection is locked to its owner.
+
+        Shared connections need
+        employee-level mapping.
+
+        Dedicated connections are locked.
+
       </div>
+
 
       <table>
 
@@ -4419,6 +7405,7 @@ function settings(){
 
         </thead>
 
+
         <tbody>
 
           ${
@@ -4435,11 +7422,13 @@ function settings(){
                 </td>
 
                 <td>
+
                   ${
                     e.employerLocked
                       ? 'Dedicated'
                       : 'Shared'
                   }
+
                 </td>
 
                 <td>
@@ -4454,15 +7443,13 @@ function settings(){
                       ? `
                         <input
                           class="map-input"
-                          value="${
-                            escapeHtml(
-                              e.employer
-                              ||
-                              e.connectionEmployer
-                              ||
-                              ''
-                            )
-                          }"
+                          value="${escapeHtml(
+                            e.employer
+                            ||
+                            e.connectionEmployer
+                            ||
+                            ''
+                          )}"
                           disabled
                         >
                         `
@@ -4526,20 +7513,24 @@ function settings(){
 
       </table>
 
+
       <div class="callout">
 
         <strong>
           Save rule
         </strong>
 
-        Every active employee from a shared connection
+        Every active employee
+        from a shared connection
         must have a WGM employer.
 
-        Use Internal / Exclude for the Scrin account owner
-        or any record that should never appear
-        in an employer portal or report run.
+        Use Internal / Exclude
+        for account-owner records
+        or records that should never
+        appear in employer reporting.
 
       </div>
+
 
       <div
         class="actions"
@@ -4561,43 +7552,1053 @@ function settings(){
   );
 }
 
-function reportPreview(){
 
-  const e =
-    employeeById(state.reportEmployeeId)
-    ||
-    employee();
+/* ==========================================================
+   SAVE EMPLOYER MAPPINGS
+   ========================================================== */
 
-  const r =
-    state.report
-    ||
-    defaultReport;
+function saveMappings(){
 
-  if(!e){
+  document
+
+    .querySelectorAll(
+      '[data-map-employer]'
+    )
+
+    .forEach(
+      field => {
+
+        const e =
+          employeeById(
+            field.dataset.mapEmployer
+          );
+
+
+        if(
+          e
+          &&
+          !e.employerLocked
+        ){
+
+          e.employer =
+            field.value.trim();
+        }
+      }
+    );
+
+
+  document
+
+    .querySelectorAll(
+      '[data-map-excluded]'
+    )
+
+    .forEach(
+      field => {
+
+        const e =
+          employeeById(
+            field.dataset.mapExcluded
+          );
+
+
+        if(
+          e
+          &&
+          !e.employerLocked
+        ){
+
+          e.excluded =
+            field.checked;
+        }
+      }
+    );
+
+
+  document
+
+    .querySelectorAll(
+      '[data-map-hours]'
+    )
+
+    .forEach(
+      field => {
+
+        const e =
+          employeeById(
+            field.dataset.mapHours
+          );
+
+
+        if(e){
+
+          e.expectedHours =
+            Number(
+              field.value
+              ||
+              0
+            );
+        }
+      }
+    );
+
+
+  state.employees.forEach(
+    e => {
+
+      if(
+        e.employerLocked
+      ){
+
+        e.employer =
+          e.connectionEmployer
+          ||
+          e.employer;
+
+
+        e.excluded =
+          false;
+      }
+    }
+  );
+
+
+  const invalid =
+    state.employees.filter(
+      e =>
+        !e.excluded
+        &&
+        !e.employerLocked
+        &&
+        !String(
+          e.employer
+          ||
+          ''
+        ).trim()
+    );
+
+
+  saveEmployees();
+
+
+  if(
+    invalid.length
+  ){
+
+    toast(
+      `${invalid.length} shared-connection employee(s) still need an employer or Internal / Exclude selection.`
+    );
+
+    return;
+  }
+
+
+  ensureEmployerSelection();
+
+
+  toast(
+    'Employer mappings validated and saved.'
+  );
+}
+
+
+/* ==========================================================
+   SUBSCRIPTIONS / BILLING
+   ========================================================== */
+
+function subscriptions(){
+
+  if(
+    state.role === 'employer'
+  ){
+
+    const team =
+      portalEmployees();
+
 
     return shell(
-      '<div class="card empty">No report selected.</div>',
-      'Report Preview'
+      `
+      <div class="header-row">
+
+        <div>
+
+          <h2>
+            Billing
+          </h2>
+
+          <p>
+
+            Prototype
+            of the Stripe-backed
+            customer billing entry point.
+
+          </p>
+
+        </div>
+
+
+        <button class="btn primary">
+          Manage payment method
+        </button>
+
+      </div>
+
+
+      <div class="grid metrics">
+
+        ${
+          metric(
+            'Plan',
+            'WGM Monthly',
+            'Configurable in Stripe'
+          )
+        }
+
+        ${
+          metric(
+            'Paid seats',
+            Math.max(team.length,1),
+            'Contracted capacity'
+          )
+        }
+
+        ${
+          metric(
+            'Billing status',
+            'Active',
+            'Prototype state'
+          )
+        }
+
+        ${
+          metric(
+            'Next renewal',
+            'Oct 1, 2026',
+            'Hosted billing'
+          )
+        }
+
+      </div>
+
+
+      <div class="grid two-col">
+
+        <div class="card panel">
+
+          <div class="panel-title">
+            Subscription
+          </div>
+
+
+          <table>
+
+            <tbody>
+
+              <tr>
+
+                <th>
+                  Organization
+                </th>
+
+                <td>
+                  ${escapeHtml(state.portalEmployer||'Employer')}
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <th>
+                  Assigned employees
+                </th>
+
+                <td>
+                  ${team.length}
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <th>
+                  Payment method
+                </th>
+
+                <td>
+                  •••• 4242
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <th>
+                  Cancellation
+                </th>
+
+                <td>
+                  Not scheduled
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+
+        <div class="card panel">
+
+          <div class="panel-title">
+            Invoice history
+          </div>
+
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Status</th>
+              </tr>
+
+            </thead>
+
+
+            <tbody>
+
+              <tr>
+
+                <td>
+                  WGM-0003
+                </td>
+
+                <td>
+                  Sep 1, 2026
+                </td>
+
+                <td>
+
+                  <span class="status green">
+
+                    <span class="dot"></span>
+
+                    Paid
+
+                  </span>
+
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+      `,
+      'Billing'
     );
   }
 
+
   return shell(
     `
-    <div class="header-row no-print">
+    <div class="header-row">
 
       <div>
 
         <h2>
-          Final WGM Report
+          Subscriptions
         </h2>
 
         <p>
-          Prototype renderer for ${escapeHtml(e.name)}.
+
+          Prototype states
+          for included WGH seats
+          and standalone paid organizations.
+
         </p>
 
       </div>
 
-      <div class="actions">
+    </div>
+
+
+    <div class="card panel">
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>Company</th>
+            <th>Entitlement</th>
+            <th>Seats</th>
+            <th>Lifecycle state</th>
+          </tr>
+
+        </thead>
+
+
+        <tbody>
+
+          ${
+            mappedEmployers().map(
+              (company,index) => {
+
+                const seatCount =
+                  activeEmployees().filter(
+                    e =>
+                      e.employer===company
+                  ).length;
+
+
+                return `
+                  <tr>
+
+                    <td>
+                      ${escapeHtml(company)}
+                    </td>
+
+                    <td>
+
+                      ${
+                        index===0
+
+                          ? 'WGH Included'
+
+                          : 'Standalone Paid'
+                      }
+
+                    </td>
+
+                    <td>
+                      ${seatCount}
+                    </td>
+
+                    <td>
+
+                      <span class="status green">
+
+                        <span class="dot"></span>
+
+                        Active
+
+                      </span>
+
+                    </td>
+
+                  </tr>
+                `;
+              }
+            ).join('')
+          }
+
+        </tbody>
+
+      </table>
+
+    </div>
+    `,
+    'Subscriptions'
+  );
+}
+
+
+/* ==========================================================
+   REPORT PREVIEW — FIVE PAGES
+   ========================================================== */
+
+function reportHeader(
+  e,
+  page,
+  total=5
+){
+
+  return `
+    <div class="wgm-rpt-header">
+
+      <div>
+
+        <div class="wgm-rpt-kicker">
+          MONTHLY VA ACCOUNTABILITY REPORT
+        </div>
+
+        <div class="wgm-rpt-person">
+
+          ${escapeHtml(e.name)}
+
+          |
+
+          ${escapeHtml(
+            e.role
+            ||
+            'VIRTUAL ASSISTANT'
+          )}
+
+        </div>
+
+      </div>
+
+
+      <div class="wgm-rpt-head-right">
+
+        <div>
+          ${periodLabel().toUpperCase()}
+        </div>
+
+        <div>
+
+          ${
+            state.reportStatus==='Released'
+
+              ? '✓ Human reviewed | Released'
+
+              : /Approved/.test(
+                  state.reportStatus
+                )
+
+                ? '✓ Human reviewed | Approved'
+
+                : 'Human review pending'
+          }
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="wgm-rpt-rule"></div>
+  `;
+}
+
+
+function reportFooter(
+  page,
+  total=5
+){
+
+  return `
+    <div class="wgm-rpt-footer">
+
+      <span>
+        WHITE GLOVE MONITOR | CONFIDENTIAL
+      </span>
+
+      <span>
+
+        ${String(page).padStart(2,'0')}
+
+        /
+
+        ${String(total).padStart(2,'0')}
+
+      </span>
+
+    </div>
+  `;
+}
+
+
+function reportPreview(){
+
+  const e =
+    employeeById(
+      state.reportEmployeeId
+    )
+    ||
+    employee();
+
+
+  if(!e){
+
+    return shell(
+      `
+      <div class="card empty">
+        No report selected.
+      </div>
+      `,
+      'Report Preview'
+    );
+  }
+
+
+  const report =
+    state.report
+    ||
+    defaultReport;
+
+
+  const matters =
+    Array.isArray(
+      report.strengths
+    )
+    &&
+    report.strengths.length
+
+      ? report.strengths.slice(
+          0,
+          3
+        )
+
+      : [
+          'Recorded hours were reconciled against the available tracking period.',
+          'Available evidence was reviewed for business relevance.',
+          'Human validation remains part of the WGM release process.'
+        ];
+
+
+  const weeks =
+    Array.isArray(
+      e.weeks
+    )
+      ? e.weeks
+      : [];
+
+
+  const workstreams =
+    Array.isArray(
+      e.workstreams
+    )
+      ? e.workstreams.slice(
+          0,
+          6
+        )
+      : [];
+
+
+  const currentCoverage =
+    coverage(e);
+
+
+  const headline =
+    report.headline
+    ||
+    `${e.name} completed the selected reporting period.`;
+
+
+  const categoryMarkup =
+    workstreams.length
+
+      ? workstreams.map(
+          item => `
+          <div class="wgm-category">
+
+            <div>
+              ${escapeHtml(item[0])}
+            </div>
+
+            <div class="wgm-category-track">
+
+              <div
+                class="wgm-category-fill"
+                style="
+                  width:${
+                    Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        Number(
+                          item[1]
+                          ||
+                          0
+                        )
+                      )
+                    )
+                  }%
+                "
+              ></div>
+
+            </div>
+
+            <div>
+
+              ${
+                Math.round(
+                  Number(
+                    item[1]
+                    ||
+                    0
+                  )
+                )
+              }%
+
+            </div>
+
+          </div>
+          `
+        ).join('')
+
+      : `
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            Workstream limitation
+          </strong>
+
+          Detailed project-based
+          category allocation
+          was not available
+          for this period.
+
+        </div>
+        `;
+
+
+  return shell(
+    `
+    <style>
+
+      .wgm-report-wrap{
+        max-width:960px;
+        margin:0 auto;
+      }
+
+      .wgm-report-actions{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin-bottom:18px;
+        gap:12px;
+      }
+
+      .wgm-page{
+        width:min(100%,210mm);
+        min-height:297mm;
+        margin:0 auto 28px;
+        background:#fff;
+        box-sizing:border-box;
+        padding:16mm 15mm 14mm;
+        position:relative;
+        box-shadow:
+          0 8px 30px rgba(0,0,0,.10);
+        color:#1A2947;
+      }
+
+      .wgm-rpt-header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:24px;
+        font-size:10px;
+        letter-spacing:.04em;
+      }
+
+      .wgm-rpt-kicker{
+        font-weight:800;
+        font-size:11px;
+      }
+
+      .wgm-rpt-person{
+        margin-top:4px;
+        color:#5f6879;
+        font-weight:700;
+      }
+
+      .wgm-rpt-head-right{
+        text-align:right;
+        font-weight:700;
+        line-height:1.6;
+      }
+
+      .wgm-rpt-rule{
+        height:2px;
+        background:#C9A84C;
+        margin:12px 0 26px;
+      }
+
+      .wgm-rpt-title{
+        font-size:30px;
+        line-height:1.1;
+        font-weight:800;
+        letter-spacing:-.025em;
+        margin:0 0 8px;
+      }
+
+      .wgm-rpt-subtitle{
+        color:#687287;
+        font-size:12px;
+        line-height:1.55;
+      }
+
+      .wgm-rpt-lead{
+        font-size:19px;
+        line-height:1.42;
+        font-weight:700;
+        margin:28px 0 12px;
+        max-width:720px;
+      }
+
+      .wgm-rpt-metrics{
+        display:grid;
+        grid-template-columns:repeat(4,1fr);
+        gap:12px;
+        margin:28px 0;
+      }
+
+      .wgm-rpt-metric{
+        border-top:3px solid #1A2947;
+        background:#f6f7f9;
+        padding:16px 14px;
+      }
+
+      .wgm-rpt-metric strong{
+        display:block;
+        font-size:24px;
+        line-height:1;
+      }
+
+      .wgm-rpt-metric span{
+        display:block;
+        margin-top:7px;
+        font-size:9px;
+        font-weight:800;
+        letter-spacing:.06em;
+      }
+
+      .wgm-rpt-metric small{
+        display:block;
+        margin-top:5px;
+        color:#6f7786;
+        font-size:8.5px;
+        line-height:1.4;
+      }
+
+      .wgm-rpt-section{
+        margin-top:26px;
+      }
+
+      .wgm-rpt-section-title{
+        font-size:11px;
+        letter-spacing:.09em;
+        text-transform:uppercase;
+        font-weight:800;
+        margin-bottom:12px;
+      }
+
+      .wgm-matter{
+        display:grid;
+        grid-template-columns:34px 1fr;
+        gap:12px;
+        padding:12px 0;
+        border-top:1px solid #e4e7ec;
+      }
+
+      .wgm-matter-num{
+        font-size:18px;
+        font-weight:800;
+        color:#C9A84C;
+      }
+
+      .wgm-matter-text{
+        font-size:11px;
+        line-height:1.55;
+        color:#3f4b60;
+      }
+
+      .wgm-rpt-callout{
+        border-left:4px solid #C9A84C;
+        background:#f8f7f2;
+        padding:15px 17px;
+        margin-top:20px;
+        font-size:11px;
+        line-height:1.6;
+      }
+
+      .wgm-rpt-callout strong{
+        display:block;
+        margin-bottom:5px;
+      }
+
+      .wgm-rpt-table{
+        width:100%;
+        border-collapse:collapse;
+        font-size:10px;
+        margin-top:14px;
+      }
+
+      .wgm-rpt-table th{
+        text-align:left;
+        padding:9px 7px;
+        border-bottom:2px solid #1A2947;
+        font-size:8px;
+        text-transform:uppercase;
+        letter-spacing:.05em;
+      }
+
+      .wgm-rpt-table td{
+        vertical-align:top;
+        padding:11px 7px;
+        border-bottom:1px solid #e3e6eb;
+        line-height:1.5;
+      }
+
+      .wgm-category{
+        display:grid;
+        grid-template-columns:170px 1fr 42px;
+        gap:10px;
+        align-items:center;
+        margin:10px 0;
+        font-size:10px;
+      }
+
+      .wgm-category-track{
+        height:8px;
+        border-radius:8px;
+        overflow:hidden;
+        background:#e9ecf0;
+      }
+
+      .wgm-category-fill{
+        height:100%;
+        background:#1A2947;
+      }
+
+      .wgm-two{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:18px;
+      }
+
+      .wgm-rpt-card{
+        background:#f7f8fa;
+        border:1px solid #e3e6eb;
+        padding:16px;
+      }
+
+      .wgm-rpt-card h4{
+        margin:0 0 8px;
+        font-size:10px;
+        text-transform:uppercase;
+        letter-spacing:.06em;
+      }
+
+      .wgm-rpt-card p{
+        margin:0;
+        font-size:10px;
+        line-height:1.55;
+        color:#4c576b;
+      }
+
+      .wgm-check-item{
+        padding:10px 0;
+        border-bottom:1px solid #e4e7ec;
+        font-size:10.5px;
+        line-height:1.55;
+      }
+
+      .wgm-check{
+        color:#C9A84C;
+        font-weight:900;
+        margin-right:6px;
+      }
+
+      .wgm-week-card{
+        padding:13px 0;
+        border-top:1px solid #e4e7ec;
+      }
+
+      .wgm-week-card strong{
+        display:block;
+        font-size:11px;
+      }
+
+      .wgm-week-card span{
+        display:block;
+        margin-top:4px;
+        font-size:10px;
+        line-height:1.5;
+        color:#566176;
+      }
+
+      .wgm-badges{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin:18px 0;
+      }
+
+      .wgm-badge{
+        border:1px solid #d8dde5;
+        border-radius:999px;
+        padding:7px 10px;
+        font-size:9px;
+        font-weight:800;
+        background:#fff;
+      }
+
+      .wgm-rpt-footer{
+        position:absolute;
+        left:15mm;
+        right:15mm;
+        bottom:9mm;
+        display:flex;
+        justify-content:space-between;
+        border-top:1px solid #dfe3e8;
+        padding-top:7px;
+        font-size:7px;
+        letter-spacing:.06em;
+        color:#7a8392;
+      }
+
+      @media print{
+
+        body{
+          background:#fff !important;
+        }
+
+        .sidebar,
+        .topbar,
+        .no-print,
+        .wgm-report-actions{
+          display:none !important;
+        }
+
+        .main,
+        .content{
+          margin:0 !important;
+          padding:0 !important;
+          width:100% !important;
+          max-width:none !important;
+        }
+
+        .wgm-report-wrap{
+          max-width:none !important;
+        }
+
+        .wgm-page{
+          box-shadow:none !important;
+          margin:0 !important;
+          width:210mm !important;
+          height:297mm !important;
+          min-height:297mm !important;
+          page-break-after:always;
+          break-after:page;
+          -webkit-print-color-adjust:exact;
+          print-color-adjust:exact;
+        }
+
+        .wgm-page:last-child{
+          page-break-after:auto;
+          break-after:auto;
+        }
+      }
+
+    </style>
+
+
+    <div class="wgm-report-wrap">
+
+      <div class="wgm-report-actions no-print">
 
         <button
           class="btn"
@@ -4615,295 +8616,960 @@ function reportPreview(){
 
       </div>
 
-    </div>
 
-    <article class="report-paper print-target">
+      <!-- PAGE 1 -->
 
-      <div class="report-top">
+      <section class="wgm-page">
 
-        <div>
+        ${reportHeader(e,1)}
 
-          <div class="report-brand">
-            WHITE GLOVE MONITOR
+
+        <div class="wgm-rpt-title">
+          ${escapeHtml(headline)}
+        </div>
+
+
+        <div class="wgm-rpt-subtitle">
+
+          Prepared exclusively for
+
+          ${escapeHtml(
+            e.employer
+            ||
+            'Employer'
+          )}
+
+        </div>
+
+
+        <div class="wgm-badges">
+
+          <span class="wgm-badge">
+            Evidence reconciled
+          </span>
+
+          <span class="wgm-badge">
+            Human reviewed
+          </span>
+
+          <span class="wgm-badge">
+
+            ${escapeHtml(
+              e.connectionName
+              ||
+              'Scrin'
+            )}
+
+          </span>
+
+        </div>
+
+
+        <div class="wgm-rpt-lead">
+
+          ${escapeHtml(
+            report.summary
+            ||
+            'Recorded time, available evidence and employee context were reconciled for human review.'
+          )}
+
+        </div>
+
+
+        <div class="wgm-rpt-metrics">
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${hoursLabel(e.trackedHours)}
+            </strong>
+
+            <span>
+              TRACKED TIME
+            </span>
+
+            <small>
+              Selected reporting period
+            </small>
+
           </div>
 
-          <div class="small">
-            WORKFORCE INTELLIGENCE + HUMAN REVIEW
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${currentCoverage??'—'}%
+            </strong>
+
+            <span>
+              SCHEDULE COVERAGE
+            </span>
+
+            <small>
+              Reporting capped at 100%
+            </small>
+
+          </div>
+
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${e.activeDays||'—'}
+            </strong>
+
+            <span>
+              ACTIVE WORKDAYS
+            </span>
+
+            <small>
+              Days containing recorded work
+            </small>
+
+          </div>
+
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${e.concerns||0}
+            </strong>
+
+            <span>
+              REVIEW FLAGS
+            </span>
+
+            <small>
+              Human review determines significance
+            </small>
+
           </div>
 
         </div>
 
-        <div class="status green">
 
-          <span class="dot"></span>
+        <div class="wgm-rpt-section">
 
-          Human reviewed |
+          <div class="wgm-rpt-section-title">
+            What matters this month
+          </div>
 
           ${
-            state.reportStatus==='Released'
-              ? 'Released'
-              : 'Approved'
-          }
+            matters.map(
+              (item,index) => `
+              <div class="wgm-matter">
 
-        </div>
+                <div class="wgm-matter-num">
+                  0${index+1}
+                </div>
 
-      </div>
+                <div class="wgm-matter-text">
+                  ${escapeHtml(item)}
+                </div>
 
-      <div class="report-kicker">
-        Monthly Workforce Accountability Report
-      </div>
-
-      <div class="report-title">
-        ${escapeHtml(e.name)}
-        ·
-        ${periodLabel()}
-      </div>
-
-      <div class="small">
-
-        Prepared for
-        ${escapeHtml(e.employer||'Employer')}
-
-        ·
-
-        Source:
-        ${escapeHtml(e.connectionName||'Scrin')}
-
-      </div>
-
-      <div class="report-grid">
-
-        <div class="report-metric">
-          <b>${hoursLabel(e.trackedHours)}</b>
-          <span class="small">Tracked time</span>
-        </div>
-
-        <div class="report-metric">
-          <b>${coverage(e)??'—'}%</b>
-          <span class="small">Schedule coverage</span>
-        </div>
-
-        <div class="report-metric">
-          <b>${e.activeDays||'—'}</b>
-          <span class="small">Active workdays</span>
-        </div>
-
-        <div class="report-metric">
-          <b>${e.concerns||0}</b>
-          <span class="small">Review flags</span>
-        </div>
-
-      </div>
-
-      <h3 class="section-title">
-        Executive overview
-      </h3>
-
-      <p>
-        <b>${escapeHtml(r.headline)}</b>
-        ${escapeHtml(r.summary)}
-      </p>
-
-      <h3 class="section-title">
-        What matters this month
-      </h3>
-
-      <div class="report-list">
-
-        ${
-          (r.strengths||[])
-            .map(
-              x => `
-              <div class="report-item">
-                ${escapeHtml(x)}
               </div>
               `
-            )
-            .join('')
-        }
-
-      </div>
-
-      <h3 class="section-title">
-        Weekly coverage & observed work
-      </h3>
-
-      <table>
-
-        <thead>
-
-          <tr>
-            <th>Week</th>
-            <th>Accountable time</th>
-            <th>Observed work</th>
-          </tr>
-
-        </thead>
-
-        <tbody>
-
-          ${
-            (e.weeks||[])
-              .map(
-                w => `
-                <tr>
-                  <td>${escapeHtml(w[0])}</td>
-                  <td>${escapeHtml(w[1])}</td>
-                  <td>${escapeHtml(w[2])}</td>
-                </tr>
-                `
-              )
-              .join('')
+            ).join('')
           }
 
-        </tbody>
+        </div>
 
-      </table>
 
-      <h3 class="section-title">
-        Work categories
-      </h3>
+        <div class="wgm-rpt-callout">
 
-      ${
-        (e.workstreams||[])
-          .map(
-            x =>
-              mixBar(
-                x[0],
-                x[1]
-              )
-          )
-          .join('')
-      }
+          <strong>
+            Review conclusion
+          </strong>
 
-      <h3 class="section-title">
-        Human review & next focus
-      </h3>
+          ${escapeHtml(
+            report.integrity
+            ||
+            'No unsupported integrity conclusion has been added.'
+          )}
 
-      <p>
-        <b>Client context:</b>
-        ${escapeHtml(r.clientContext)}
-      </p>
+        </div>
 
-      <p>
-        <b>Coaching:</b>
-        ${escapeHtml(r.coaching)}
-      </p>
 
-      <p>
-        <b>Next-month focus:</b>
-        ${escapeHtml(r.nextFocus)}
-      </p>
+        <div class="wgm-rpt-callout">
 
-      <div class="callout">
+          <strong>
+            White Glove action completed
+          </strong>
 
-        <strong>
-          WGM review principle
-        </strong>
+          ${escapeHtml(
+            report.coaching
+            ||
+            'Monthly evidence review and schedule reconciliation completed.'
+          )}
 
-        Time tracking and screenshots are evidence inputs,
-        not standalone performance verdicts.
+        </div>
 
-        Material conclusions remain human-reviewed
-        before release.
 
-      </div>
+        ${reportFooter(1)}
 
-      <div class="report-footer">
+      </section>
 
-        <span>
-          WHITE GLOVE MONITOR · CONFIDENTIAL
-        </span>
 
-        <span>
-          Prototype V1.3
-        </span>
+      <!-- PAGE 2 -->
 
-      </div>
+      <section class="wgm-page">
 
-    </article>
+        ${reportHeader(e,2)}
+
+
+        <div class="wgm-rpt-title">
+          Monthly Activity & Evidence
+        </div>
+
+
+        <div class="wgm-rpt-subtitle">
+
+          Week-by-week recorded time,
+          observed work
+          and supporting evidence.
+
+        </div>
+
+
+        <div class="wgm-rpt-section">
+
+          <table class="wgm-rpt-table">
+
+            <thead>
+
+              <tr>
+                <th>Week</th>
+                <th>Accountable time</th>
+                <th>Observed work</th>
+              </tr>
+
+            </thead>
+
+
+            <tbody>
+
+              ${
+                weeks.length
+
+                  ? weeks.map(
+                      week => `
+                      <tr>
+
+                        <td>
+                          <b>
+                            ${escapeHtml(week[0]||'Week')}
+                          </b>
+                        </td>
+
+                        <td>
+                          ${escapeHtml(week[1]||'—')}
+                        </td>
+
+                        <td>
+                          ${escapeHtml(week[2]||'Tracked work recorded.')}
+                        </td>
+
+                      </tr>
+                      `
+                    ).join('')
+
+                  : `
+                    <tr>
+
+                      <td colspan="3">
+
+                        Weekly totals
+                        have not yet been calculated
+                        for this live period.
+
+                      </td>
+
+                    </tr>
+                    `
+              }
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+
+        <div class="wgm-rpt-section">
+
+          <div class="wgm-rpt-section-title">
+            Work categories
+          </div>
+
+          ${categoryMarkup}
+
+        </div>
+
+
+        <div class="wgm-two">
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Review coverage
+            </h4>
+
+            <p>
+
+              ${e.activeDays||'—'}
+              active workday(s).
+
+              <br><br>
+
+              ${hoursLabel(e.trackedHours)}
+              recorded time reconciled.
+
+            </p>
+
+          </div>
+
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Evidence interpretation
+            </h4>
+
+            <p>
+
+              Screenshots,
+              applications
+              and source metadata
+              support interpretation.
+
+              Category shares remain directional.
+
+            </p>
+
+          </div>
+
+        </div>
+
+
+        ${reportFooter(2)}
+
+      </section>
+
+
+      <!-- PAGE 3 -->
+
+      <section class="wgm-page">
+
+        ${reportHeader(e,3)}
+
+
+        <div class="wgm-rpt-title">
+          Strengths, Coaching & Client Context
+        </div>
+
+
+        <div class="wgm-rpt-subtitle">
+
+          Evidence-backed positives
+          and practical guidance.
+
+        </div>
+
+
+        <div class="wgm-rpt-section">
+
+          <div class="wgm-rpt-section-title">
+            Strengths this month
+          </div>
+
+          ${
+            matters.map(
+              item => `
+              <div class="wgm-check-item">
+
+                <span class="wgm-check">
+                  ✓
+                </span>
+
+                ${escapeHtml(item)}
+
+              </div>
+              `
+            ).join('')
+          }
+
+        </div>
+
+
+        <div class="wgm-two">
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Coaching moment
+            </h4>
+
+            <p>
+              ${escapeHtml(report.coaching)}
+            </p>
+
+          </div>
+
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Why it matters
+            </h4>
+
+            <p>
+
+              Clear project labels,
+              notes and context
+              make reporting easier
+              to interpret
+              without relying
+              on screenshots alone.
+
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div
+          class="wgm-two"
+          style="margin-top:18px"
+        >
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Client context
+            </h4>
+
+            <p>
+
+              ${escapeHtml(
+                report.clientContext
+                ||
+                e.context
+                ||
+                'No additional clarification recorded.'
+              )}
+
+            </p>
+
+          </div>
+
+
+          <div class="wgm-rpt-card">
+
+            <h4>
+              Next expectation
+            </h4>
+
+            <p>
+              ${escapeHtml(report.nextFocus)}
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            White Glove coaching completed
+          </strong>
+
+          Monthly evidence
+          and schedule review completed.
+
+        </div>
+
+
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            Next-month monitoring
+          </strong>
+
+          Continue reviewing
+          schedule consistency,
+          business relevance,
+          context,
+          project labels
+          and evidence-supported indicators.
+
+        </div>
+
+
+        ${reportFooter(3)}
+
+      </section>
+
+
+      <!-- PAGE 4 -->
+
+      <section class="wgm-page">
+
+        ${reportHeader(e,4)}
+
+
+        <div class="wgm-rpt-title">
+          Monthly Consistency Review
+        </div>
+
+
+        <div class="wgm-rpt-subtitle">
+
+          Schedule coverage,
+          work patterns
+          and review indicators.
+
+        </div>
+
+
+        <div class="wgm-rpt-metrics">
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${weeks.length||'—'}
+            </strong>
+
+            <span>
+              WEEKS REVIEWED
+            </span>
+
+            <small>
+              Available weekly blocks
+            </small>
+
+          </div>
+
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${currentCoverage??'—'}%
+            </strong>
+
+            <span>
+              MONTHLY COVERAGE
+            </span>
+
+            <small>
+              Capped at 100%
+            </small>
+
+          </div>
+
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${e.activeDays||'—'}
+            </strong>
+
+            <span>
+              ACTIVE DAYS
+            </span>
+
+            <small>
+              Recorded workdays
+            </small>
+
+          </div>
+
+
+          <div class="wgm-rpt-metric">
+
+            <strong>
+              ${e.concerns||0}
+            </strong>
+
+            <span>
+              REVIEW FLAGS
+            </span>
+
+            <small>
+              Not misconduct findings
+            </small>
+
+          </div>
+
+        </div>
+
+
+        <table class="wgm-rpt-table">
+
+          <thead>
+
+            <tr>
+              <th>Week</th>
+              <th>Accountable time</th>
+              <th>Work pattern</th>
+              <th>Relevance</th>
+              <th>Integrity</th>
+            </tr>
+
+          </thead>
+
+
+          <tbody>
+
+            ${
+              weeks.length
+
+                ? weeks.map(
+                    week => `
+                    <tr>
+
+                      <td>
+                        ${escapeHtml(week[0]||'Week')}
+                      </td>
+
+                      <td>
+                        ${escapeHtml(week[1]||'—')}
+                      </td>
+
+                      <td>
+                        ${escapeHtml(week[2]||'Evidence available.')}
+                      </td>
+
+                      <td>
+                        Evidence-supported
+                      </td>
+
+                      <td>
+
+                        ${
+                          Number(
+                            e.concerns
+                            ||
+                            0
+                          )
+
+                            ? 'Review required'
+
+                            : 'No review flag'
+                        }
+
+                      </td>
+
+                    </tr>
+                    `
+                  ).join('')
+
+                : `
+                  <tr>
+
+                    <td colspan="5">
+
+                      Weekly consistency analytics
+                      will populate
+                      after the live period
+                      has been fully calculated.
+
+                    </td>
+
+                  </tr>
+                  `
+            }
+
+          </tbody>
+
+        </table>
+
+
+        <div class="wgm-rpt-section">
+
+          <div class="wgm-rpt-section-title">
+            Recurring patterns
+          </div>
+
+          ${
+            matters.map(
+              item => `
+              <div class="wgm-check-item">
+                • ${escapeHtml(item)}
+              </div>
+              `
+            ).join('')
+          }
+
+        </div>
+
+
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            Recommended focus
+          </strong>
+
+          ${escapeHtml(
+            report.nextFocus
+            ||
+            report.coaching
+          )}
+
+        </div>
+
+
+        ${reportFooter(4)}
+
+      </section>
+
+
+      <!-- PAGE 5 -->
+
+      <section class="wgm-page">
+
+        ${reportHeader(e,5)}
+
+
+        <div class="wgm-rpt-title">
+          Monthly Task Map
+        </div>
+
+
+        <div class="wgm-rpt-subtitle">
+
+          Observed business activity
+          across the reporting period.
+
+          Category shares
+          are evidence indicators,
+          not standalone productivity scores.
+
+        </div>
+
+
+        <div class="wgm-rpt-section">
+
+          <div class="wgm-rpt-section-title">
+            Observed work categories
+          </div>
+
+          ${categoryMarkup}
+
+        </div>
+
+
+        <div class="wgm-rpt-section">
+
+          <div class="wgm-rpt-section-title">
+            What we verified
+          </div>
+
+          ${
+            weeks.length
+
+              ? weeks.map(
+                  week => `
+                  <div class="wgm-week-card">
+
+                    <strong>
+
+                      ${escapeHtml(week[0]||'Week')}
+
+                      ·
+
+                      ${escapeHtml(week[1]||'—')}
+
+                    </strong>
+
+                    <span>
+                      ${escapeHtml(week[2]||'Tracked work recorded.')}
+                    </span>
+
+                  </div>
+                  `
+                ).join('')
+
+              : `
+                <div class="wgm-week-card">
+
+                  <strong>
+                    Selected period
+                  </strong>
+
+                  <span>
+
+                    ${hoursLabel(e.trackedHours)}
+                    recorded time
+                    across
+                    ${e.activeDays||'—'}
+                    active workday(s).
+
+                  </span>
+
+                </div>
+                `
+          }
+
+        </div>
+
+
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            Client takeaway
+          </strong>
+
+          ${escapeHtml(
+            report.summary
+            ||
+            headline
+          )}
+
+        </div>
+
+
+        <div class="wgm-rpt-callout">
+
+          <strong>
+            White Glove review & support
+          </strong>
+
+          Reviewed recorded time,
+          available screenshot evidence,
+          applications,
+          context
+          and evidence-supported indicators.
+
+          <br><br>
+
+          Next:
+
+          ${escapeHtml(
+            report.nextFocus
+            ||
+            'continue monitoring the next reporting period.'
+          )}
+
+        </div>
+
+
+        ${reportFooter(5)}
+
+      </section>
+
+    </div>
     `,
     'Report Preview'
   );
 }
 
-function mergeSyncedEmployee(x,prior){
+
+/* ==========================================================
+   MERGE SCRIN EMPLOYEE
+   ========================================================== */
+
+function mergeSyncedEmployee(
+  incoming,
+  prior
+){
 
   const old =
     prior.find(
-      o =>
-        String(o.id)
+      e =>
+        String(e.id)
         ===
-        String(x.id)
+        String(incoming.id)
     )
+
     ||
+
     prior.find(
-      o =>
-        String(o.employmentId)
+      e =>
+        String(e.employmentId)
         ===
-        String(x.employmentId)
+        String(
+          incoming.employmentId
+        )
         &&
         (
-          !o.connectionId
+          !e.connectionId
           ||
-          String(o.connectionId)
+          String(e.connectionId)
           ===
-          String(x.connectionId)
+          String(
+            incoming.connectionId
+          )
         )
     )
+
     ||
+
     {};
 
+
   const dedicatedEmployer =
-    x.employerLocked
+    incoming.employerLocked
 
       ? (
-          x.connectionEmployer
+          incoming.connectionEmployer
           ||
-          x.employer
+          incoming.employer
           ||
           ''
         )
 
       : null;
 
+
   return {
     ...old,
-    ...x,
+    ...incoming,
 
     id:
-      x.id
+      incoming.id
       ||
-      `${
-        x.connectionId
-        ||
-        'scrin'
-      }::${x.employmentId}`,
+      (
+        `${incoming.connectionId||'scrin'}`
+        +
+        '::'
+        +
+        `${incoming.employmentId}`
+      ),
 
     initials:
-      initials(x.name),
+      initials(
+        incoming.name
+      ),
 
     employer:
       dedicatedEmployer !== null
+
         ? dedicatedEmployer
+
         : (
             old.employer
             ||
-            x.employer
+            incoming.employer
             ||
             ''
           ),
 
     excluded:
-      x.employerLocked
+      incoming.employerLocked
+
         ? false
-        : Boolean(old.excluded),
+
+        : Boolean(
+            old.excluded
+          ),
 
     expectedHours:
       Number(
         old.expectedHours
         ??
-        x.expectedHours
+        incoming.expectedHours
         ??
         160
       ),
@@ -4911,14 +9577,14 @@ function mergeSyncedEmployee(x,prior){
     schedule:
       old.schedule
       ||
-      x.schedule
+      incoming.schedule
       ||
       'Monday–Friday · 8 hours/day · 40 hours/week',
 
     timezone:
       old.timezone
       ||
-      x.timezone
+      incoming.timezone
       ||
       'Set in WGM',
 
@@ -4926,7 +9592,7 @@ function mergeSyncedEmployee(x,prior){
       Number(
         old.timezoneOffsetMinutes
         ??
-        x.timezoneOffsetMinutes
+        incoming.timezoneOffsetMinutes
         ??
         0
       ),
@@ -4934,7 +9600,7 @@ function mergeSyncedEmployee(x,prior){
     context:
       old.context
       ||
-      x.context
+      incoming.context
       ||
       '',
 
@@ -4942,7 +9608,7 @@ function mergeSyncedEmployee(x,prior){
       Number(
         old.trackedHours
         ??
-        x.trackedHours
+        incoming.trackedHours
         ??
         0
       ),
@@ -4951,7 +9617,7 @@ function mergeSyncedEmployee(x,prior){
       Number(
         old.activeDays
         ??
-        x.activeDays
+        incoming.activeDays
         ??
         0
       ),
@@ -4960,7 +9626,7 @@ function mergeSyncedEmployee(x,prior){
       Number(
         old.concerns
         ??
-        x.concerns
+        incoming.concerns
         ??
         0
       ),
@@ -4968,90 +9634,124 @@ function mergeSyncedEmployee(x,prior){
     workstreams:
       old.workstreams
       ||
-      x.workstreams
+      incoming.workstreams
       ||
       [],
 
     apps:
       old.apps
       ||
-      x.apps
+      incoming.apps
       ||
       [],
 
     weeks:
       old.weeks
       ||
-      x.weeks
+      incoming.weeks
       ||
       [],
 
     shots:
       old.shots
       ||
-      x.shots
+      incoming.shots
       ||
       [],
+
+    daySummary:
+      old.daySummary
+      ||
+      incoming.daySummary
+      ||
+      null,
+
+    monitoringPolicy:
+      old.monitoringPolicy
+      ||
+      incoming.monitoringPolicy
+      ||
+      defaultMonitoringPolicy(),
 
     reportingStatus:
       old.reportingStatus
       ||
-      x.reportingStatus
+      incoming.reportingStatus
       ||
       'Synced'
   };
 }
+
+
+/* ==========================================================
+   SYNC SCRIN
+   ========================================================== */
 
 async function syncScrin(){
 
   state.syncMessage =
     'Syncing all Scrin connections…';
 
+
   render();
 
-  try{
 
-    const r =
+  try {
+
+    const response =
       await fetch(
         '/api/scrin/all-common',
         {
-          method:'POST'
+          method: 'POST'
         }
       );
 
-    const j =
-      await r.json();
 
-    if(!r.ok){
+    const data =
+      await response.json();
+
+
+    if(
+      !response.ok
+    ){
 
       throw new Error(
-        j.error
+        data.error
         ||
         'Scrin connection sync failed'
       );
     }
 
+
     const prior =
       [...state.employees];
 
+
     state.connections =
-      Array.isArray(j.connections)
-        ? j.connections
+      Array.isArray(
+        data.connections
+      )
+        ? data.connections
         : state.connections;
+
 
     state.employees =
       (
-        Array.isArray(j.employees)
-          ? j.employees
+        Array.isArray(
+          data.employees
+        )
+          ? data.employees
           : []
       )
+
       .map(
-        x =>
+        e =>
           mergeSyncedEmployee(
-            x,
+            e,
             prior
           )
       );
+
 
     if(
       !state.employees.length
@@ -5062,16 +9762,20 @@ async function syncScrin(){
       );
     }
 
-    const currentStillExists =
+
+    const selectedExists =
       state.employees.some(
         e =>
           String(e.id)
           ===
-          String(state.selectedEmployeeId)
+          String(
+            state.selectedEmployeeId
+          )
       );
 
+
     if(
-      !currentStillExists
+      !selectedExists
     ){
 
       state.selectedEmployeeId =
@@ -5080,1002 +9784,735 @@ async function syncScrin(){
         state.employees[0].id;
     }
 
+
     saveEmployees();
+
     saveConnections();
 
+
     state.mode =
-      j.demo
+      data.demo
         ? 'DEMO'
         : 'LIVE';
 
+
     const errorCount =
-      Array.isArray(j.errors)
-        ? j.errors.length
+      Array.isArray(
+        data.errors
+      )
+        ? data.errors.length
         : 0;
 
-    state.syncMessage =
-      `Connected ${
-        state.connections.filter(
-          c =>
-            c.status==='connected'
-            ||
-            c.status==='demo'
-        ).length
-      }/${state.connections.length} Scrin connection(s). ${
-        state.employees.length
-      } employment record(s) loaded.${
-        errorCount
-          ? ` ${errorCount} connection error(s) require attention.`
-          : ''
-      }`;
 
-  }catch(e){
+    const connected =
+      state.connections.filter(
+        connection =>
+          connection.status==='connected'
+          ||
+          connection.status==='demo'
+      ).length;
+
 
     state.syncMessage =
-      `Connection sync failed: ${e.message}`;
+      (
+        `Connected ${connected}/${state.connections.length} Scrin connection(s). `
+        +
+        `${state.employees.length} employment record(s) loaded.`
+        +
+        (
+          errorCount
+            ? ` ${errorCount} connection error(s) require attention.`
+            : ''
+        )
+      );
+
+
+  } catch(error){
+
+    state.syncMessage =
+      `Connection sync failed: ${error.message}`;
   }
+
 
   render();
 }
 
+
+/* ==========================================================
+   CONNECTIONS
+   ========================================================== */
+
 async function refreshConnections(){
 
-  try{
+  try {
 
-    const r =
+    const response =
       await fetch(
         '/api/scrin/connections'
       );
 
-    const j =
-      await r.json();
 
-    if(!r.ok){
+    const data =
+      await response.json();
+
+
+    if(
+      !response.ok
+    ){
 
       throw new Error(
-        j.error
+        data.error
         ||
         'Could not load connections'
       );
     }
 
+
     state.connections =
-      Array.isArray(j.connections)
-        ? j.connections
+      Array.isArray(
+        data.connections
+      )
+        ? data.connections
         : [];
 
+
     saveConnections();
+
 
     toast(
       `${state.connections.length} Scrin connection(s) configured.`
     );
 
-  }catch(e){
+
+  } catch(error){
 
     toast(
-      `Could not refresh connections: ${e.message}`
+      `Could not refresh connections: ${error.message}`
     );
   }
 }
 
+
 async function testScrin(){
 
-  const el =
+  const result =
     document.getElementById(
       'scrinResult'
     );
 
-  if(el){
 
-    el.textContent =
+  if(result){
+
+    result.textContent =
       'Testing all connections…';
   }
 
-  try{
 
-    const r =
+  try {
+
+    const response =
       await fetch(
         '/api/scrin/all-common',
         {
-          method:'POST'
+          method: 'POST'
         }
       );
 
-    const j =
-      await r.json();
 
-    if(!r.ok){
+    const data =
+      await response.json();
+
+
+    if(
+      !response.ok
+    ){
 
       throw new Error(
-        j.error
+        data.error
         ||
         'Not configured'
       );
     }
 
+
     state.mode =
-      j.demo
+      data.demo
         ? 'DEMO'
         : 'LIVE';
 
+
     state.connections =
-      Array.isArray(j.connections)
-        ? j.connections
+      Array.isArray(
+        data.connections
+      )
+        ? data.connections
         : state.connections;
+
 
     saveConnections();
 
+
     const connected =
       state.connections.filter(
-        c =>
-          c.status==='connected'
+        connection =>
+          connection.status==='connected'
           ||
-          c.status==='demo'
+          connection.status==='demo'
       ).length;
 
+
     state.syncMessage =
-      `${state.mode} connections responding: ${
-        connected
-      }/${state.connections.length}. ${
-        j.employees?.length||0
-      } employment record(s) available.`;
+      (
+        `${state.mode} connections responding: `
+        +
+        `${connected}/${state.connections.length}. `
+        +
+        `${data.employees?.length||0} employment record(s) available.`
+      );
+
 
     render();
 
-  }catch(e){
 
-    if(el){
+  } catch(error){
 
-      el.textContent =
-        `Not connected: ${e.message}`;
+    if(result){
+
+      result.textContent =
+        `Not connected: ${error.message}`;
     }
   }
 }
 
-async function generateReport(){
 
-  const select =
-    document.getElementById(
-      'reportEmployee'
-    );
-
-  const id =
-    select?.value
-    ||
-    state.selectedEmployeeId;
-
-  state.reportPeriod = {
-
-    from:
-      document
-        .getElementById('fromDate')
-        ?.value
-      ||
-      state.reportPeriod.from,
-
-    to:
-      document
-        .getElementById('toDate')
-        ?.value
-      ||
-      state.reportPeriod.to
-  };
-
-  if(
-    id==='__ALL__'
-  ){
-
-    toast(
-      'Batch generation is the next report-engine milestone. Multi-source employee selection is now ready.'
-    );
-
-    return;
-  }
-
-  state.selectedEmployeeId =
-    id;
-
-  const e =
-    employeeById(id);
-
-  if(
-    !e
-    ||
-    e.excluded
-    ||
-    !e.employer
-  ){
-
-    toast(
-      'This employee must be mapped to an employer before report generation.'
-    );
-
-    return;
-  }
-
-  state.reportEmployeeId =
-    e.id;
-
-  state.reportStatus =
-    'Generating';
-
-  render();
-
-  try{
-
-    let verified = {
-
-      employee:e,
-
-      period:
-        state.reportPeriod,
-
-      source:{
-        provider:'scrin',
-        connectionId:e.connectionId,
-        connectionName:e.connectionName
-      }
-    };
-
-    if(
-      state.mode==='LIVE'
-      &&
-      e.employmentId
-    ){
-
-      const periodRes =
-        await fetch(
-          '/api/wgm/period-data',
-          {
-            method:'POST',
-
-            headers:{
-              'Content-Type':'application/json'
-            },
-
-            body:JSON.stringify({
-              connectionId:e.connectionId,
-              employmentId:e.employmentId,
-              from:state.reportPeriod.from,
-              to:state.reportPeriod.to,
-              timezoneOffsetMinutes:e.timezoneOffsetMinutes||0,
-              expectedHours:Number(e.expectedHours||0),
-              includeScreenshots:true
-            })
-          }
-        );
-
-      const p =
-        await periodRes.json();
-
-      if(
-        !periodRes.ok
-      ){
-
-        throw new Error(
-          p.error
-          ||
-          'Could not load period data'
-        );
-      }
-
-      e.trackedHours =
-        p.metrics.trackedHours;
-
-      e.activeDays =
-        p.metrics.activeDays;
-
-      e.workstreams =
-        p.workstreams
-        ||
-        e.workstreams;
-
-      e.apps =
-        p.apps
-        ||
-        e.apps;
-
-      e.shots =
-        p.screenshotPreview
-        ||
-        e.shots;
-
-      saveEmployees();
-
-      verified = {
-        ...verified,
-        verifiedMetrics:p.metrics,
-        workstreams:p.workstreams,
-        apps:p.apps,
-        context:e.context,
-        screenshotEvidence:p.screenshotEvidenceSummary
-      };
-    }
-
-    const res =
-      await fetch(
-        '/api/reports/generate',
-        {
-          method:'POST',
-
-          headers:{
-            'Content-Type':'application/json'
-          },
-
-          body:JSON.stringify({
-            ...verified,
-
-            benchmark:
-              e.id==='demo-main::477279'
-                ? defaultReport
-                : null
-          })
-        }
-      );
-
-    const data =
-      await res.json();
-
-    if(!res.ok){
-
-      throw new Error(
-        data.error
-        ||
-        'AI generation unavailable'
-      );
-    }
-
-    state.report =
-      data.report
-      ||
-      defaultReport;
-
-  }catch(err){
-
-    state.report =
-      defaultReport;
-
-    toast(
-      `Using prototype narrative: ${err.message}`
-    );
-  }
-
-  state.reportStatus =
-    'Draft ready';
-
-  state.page =
-    'review';
-
-  render();
-}
-
-async function loadLiveDay(){
-
-  const e =
-    employee();
-
-  const d =
-    document
-      .getElementById('screenDate')
-      ?.value;
-
-  if(!e){
-    return;
-  }
-
-  if(
-    state.mode!=='LIVE'
-  ){
-
-    toast(
-      'Demo mode: connect Scrin to load real daily screenshots.'
-    );
-
-    return;
-  }
-
-  const area =
-    document.getElementById(
-      'shotArea'
-    );
-
-  if(area){
-
-    area.innerHTML =
-      '<div class="empty">Loading Scrin evidence…</div>';
-  }
-
-  try{
-
-    const r =
-      await fetch(
-        '/api/wgm/period-data',
-        {
-          method:'POST',
-
-          headers:{
-            'Content-Type':'application/json'
-          },
-
-          body:JSON.stringify({
-            connectionId:e.connectionId,
-            employmentId:e.employmentId,
-            from:d,
-            to:d,
-            timezoneOffsetMinutes:e.timezoneOffsetMinutes||0,
-            expectedHours:8,
-            includeScreenshots:true
-          })
-        }
-      );
-
-    const p =
-      await r.json();
-
-    if(!r.ok){
-
-      throw new Error(
-        p.error
-        ||
-        'Failed'
-      );
-    }
-
-    e.shots =
-      p.screenshotPreview
-      ||
-      [];
-
-    saveEmployees();
-
-    render();
-
-  }catch(err){
-
-    toast(
-      `Could not load screenshots: ${err.message}`
-    );
-  }
-}
-
-function saveMappings(){
-
-  document
-    .querySelectorAll(
-      '[data-map-employer]'
-    )
-    .forEach(
-      el => {
-
-        const e =
-          employeeById(
-            el.dataset.mapEmployer
-          );
-
-        if(
-          e
-          &&
-          !e.employerLocked
-        ){
-
-          e.employer =
-            el.value.trim();
-        }
-      }
-    );
-
-  document
-    .querySelectorAll(
-      '[data-map-excluded]'
-    )
-    .forEach(
-      el => {
-
-        const e =
-          employeeById(
-            el.dataset.mapExcluded
-          );
-
-        if(
-          e
-          &&
-          !e.employerLocked
-        ){
-
-          e.excluded =
-            el.checked;
-        }
-      }
-    );
-
-  document
-    .querySelectorAll(
-      '[data-map-hours]'
-    )
-    .forEach(
-      el => {
-
-        const e =
-          employeeById(
-            el.dataset.mapHours
-          );
-
-        if(e){
-
-          e.expectedHours =
-            Number(
-              el.value
-              ||
-              0
-            );
-        }
-      }
-    );
-
-  state.employees.forEach(
-    e => {
-
-      if(
-        e.employerLocked
-      ){
-
-        e.employer =
-          e.connectionEmployer
-          ||
-          e.employer;
-
-        e.excluded =
-          false;
-      }
-    }
-  );
-
-  const invalid =
-    state.employees.filter(
-      e =>
-        !e.excluded
-        &&
-        !e.employerLocked
-        &&
-        !String(
-          e.employer
-          ||
-          ''
-        ).trim()
-    );
-
-  if(
-    invalid.length
-  ){
-
-    saveEmployees();
-
-    toast(
-      `${invalid.length} shared-connection employee(s) still need an employer or Internal / Exclude selection.`
-    );
-
-    return;
-  }
-
-  saveEmployees();
-
-  ensureEmployerSelection();
-
-  toast(
-    'Employer mappings validated and saved for this prototype browser.'
-  );
-}
-
-function saveContext(){
-
-  const e =
-    employee();
-
-  if(!e){
-    return;
-  }
-
-  if(
-    !e.employerLocked
-  ){
-
-    e.employer =
-      document
-        .getElementById('contextEmployer')
-        ?.value
-        .trim()
-      ||
-      e.employer;
-  }
-
-  e.expectedHours =
-    Number(
-      document
-        .getElementById('contextExpected')
-        ?.value
-      ||
-      e.expectedHours
-      ||
-      0
-    );
-
-  e.timezone =
-    document
-      .getElementById('contextTimezone')
-      ?.value
-      .trim()
-    ||
-    e.timezone;
-
-  e.schedule =
-    document
-      .getElementById('contextSchedule')
-      ?.value
-      .trim()
-    ||
-    e.schedule;
-
-  e.context =
-    document
-      .getElementById('contextText')
-      ?.value
-      .trim()
-    ||
-    '';
-
-  saveEmployees();
-
-  toast(
-    'Employee baseline and context saved.'
-  );
-}
+/* ==========================================================
+   RENDER
+   ========================================================== */
 
 function render(){
 
-  let out =
+  let output =
     '';
 
+
   if(
-    state.page==='dashboard'
+    state.page === 'dashboard'
   ){
-    out=dashboard();
+    output = dashboard();
   }
 
   else if(
-    state.page==='companies'
+    state.page === 'companies'
   ){
-    out=companies();
+    output = companies();
   }
 
   else if(
-    state.page==='employees'
+    state.page === 'employees'
   ){
-    out=employees();
+    output = employees();
   }
 
   else if(
-    state.page==='monitoring'
+    state.page === 'monitoring'
   ){
-    out=monitoring();
+    output = monitoring();
   }
 
   else if(
-    state.page==='reports'
+    state.page === 'reports'
   ){
-    out=reports();
+    output = reports();
   }
 
   else if(
-    state.page==='review'
+    state.page === 'review'
   ){
-    out=review();
+    output = review();
   }
 
   else if(
-    state.page==='subscriptions'
+    state.page === 'subscriptions'
   ){
-    out=subscriptions();
+    output = subscriptions();
   }
 
   else if(
-    state.page==='settings'
+    state.page === 'dataSources'
   ){
-    out=settings();
+    output = dataSources();
   }
 
   else if(
-    state.page==='dataSources'
+    state.page === 'settings'
   ){
-    out=dataSources();
+    output = settings();
   }
 
   else if(
-    state.page==='reportPreview'
+    state.page === 'reportPreview'
   ){
-    out=reportPreview();
+    output = reportPreview();
   }
+
 
   document
-    .getElementById('app')
+    .getElementById(
+      'app'
+    )
     .innerHTML =
-      out;
+      output;
+
 
   bind();
 }
 
+
+/* ==========================================================
+   EVENT BINDINGS
+   ========================================================== */
+
 function bind(){
 
   document
+
     .querySelectorAll(
       '[data-page]'
     )
+
     .forEach(
-      x => {
+      element => {
 
-        x.onclick = () => {
+        element.onclick =
+          () => {
 
-          state.page =
-            x.dataset.page;
+            state.page =
+              element.dataset.page;
 
-          render();
-        };
+            render();
+          };
       }
     );
 
+
   document
+
     .querySelectorAll(
       '[data-open-id]'
     )
+
     .forEach(
-      x => {
+      element => {
 
-        x.onclick = () => {
+        element.onclick =
+          () => {
 
-          const target =
-            employeeById(
-              x.dataset.openId
-            );
+            const target =
+              employeeById(
+                element.dataset.openId
+              );
 
-          if(
-            state.role==='employer'
-            &&
-            target?.employer!==state.portalEmployer
-          ){
 
-            toast(
-              'That employee is outside this employer portal.'
-            );
+            if(
+              state.role==='employer'
+              &&
+              target?.employer
+              !==
+              state.portalEmployer
+            ){
 
-            return;
-          }
+              toast(
+                'That employee is outside this employer portal.'
+              );
 
-          state.selectedEmployeeId =
-            x.dataset.openId;
+              return;
+            }
 
-          state.page =
-            'monitoring';
 
-          state.employeeTab =
-            'overview';
+            state.selectedEmployeeId =
+              element.dataset.openId;
 
-          render();
-        };
+
+            state.page =
+              'monitoring';
+
+
+            state.employeeTab =
+              'overview';
+
+
+            render();
+          };
       }
     );
 
+
   document
+
     .querySelectorAll(
       '[data-tab]'
     )
+
     .forEach(
-      x => {
+      element => {
 
-        x.onclick = () => {
+        element.onclick =
+          () => {
 
-          state.employeeTab =
-            x.dataset.tab;
+            state.employeeTab =
+              element.dataset.tab;
 
-          render();
-        };
+            render();
+          };
       }
     );
 
-  const se =
+
+  const roleSwitcher =
     document.getElementById(
-      'reportEmployee'
+      'roleSwitcher'
     );
 
-  if(se){
 
-    se.onchange = () => {
+  if(roleSwitcher){
 
-      if(
-        se.value!=='__ALL__'
-      ){
+    roleSwitcher.onchange =
+      () =>
+        setRole(
+          roleSwitcher.value
+        );
+  }
+
+
+  const employerSwitcher =
+    document.getElementById(
+      'employerSwitcher'
+    );
+
+
+  if(employerSwitcher){
+
+    employerSwitcher.onchange =
+      () => {
+
+        state.portalEmployer =
+          employerSwitcher.value;
+
+
+        localStorage.setItem(
+          'wgmPortalEmployer',
+          state.portalEmployer
+        );
+
+
+        const team =
+          portalEmployees();
+
 
         state.selectedEmployeeId =
-          se.value;
-      }
-    };
+          team[0]?.id
+          ||
+          '';
+
+
+        render();
+      };
   }
 
-  const g =
-    document.getElementById(
-      'generateBtn'
-    );
 
-  if(g){
-    g.onclick =
-      generateReport;
-  }
-
-  const s =
+  const syncButton =
     document.getElementById(
       'syncScrin'
     );
 
-  if(s){
-    s.onclick =
+
+  if(syncButton){
+
+    syncButton.onclick =
       syncScrin;
   }
 
-  const t =
+
+  const testButton =
     document.getElementById(
       'testScrin'
     );
 
-  if(t){
-    t.onclick =
+
+  if(testButton){
+
+    testButton.onclick =
       testScrin;
   }
 
-  const m =
-    document.getElementById(
-      'saveMappings'
-    );
 
-  if(m){
-    m.onclick =
-      saveMappings;
-  }
-
-  const c =
-    document.getElementById(
-      'saveContext'
-    );
-
-  if(c){
-    c.onclick =
-      saveContext;
-  }
-
-  const l =
-    document.getElementById(
-      'loadLiveDay'
-    );
-
-  if(l){
-    l.onclick =
-      loadLiveDay;
-  }
-
-  const rc =
+  const refreshButton =
     document.getElementById(
       'refreshConnections'
     );
 
-  if(rc){
-    rc.onclick =
+
+  if(refreshButton){
+
+    refreshButton.onclick =
       refreshConnections;
   }
 
-  const add =
+
+  const addConnection =
     document.getElementById(
       'toggleAddConnection'
     );
 
-  if(add){
 
-    add.onclick = () => {
+  if(addConnection){
 
-      state.showAddConnection =
-        !state.showAddConnection;
+    addConnection.onclick =
+      () => {
 
-      render();
-    };
+        state.showAddConnection =
+          !state.showAddConnection;
+
+        render();
+      };
   }
 
-  const req =
+
+  const saveMappingsButton =
+    document.getElementById(
+      'saveMappings'
+    );
+
+
+  if(saveMappingsButton){
+
+    saveMappingsButton.onclick =
+      saveMappings;
+  }
+
+
+  const saveContextButton =
+    document.getElementById(
+      'saveContext'
+    );
+
+
+  if(saveContextButton){
+
+    saveContextButton.onclick =
+      saveContext;
+  }
+
+
+  const loadDayButton =
+    document.getElementById(
+      'loadLiveDay'
+    );
+
+
+  if(loadDayButton){
+
+    loadDayButton.onclick =
+      loadLiveDay;
+  }
+
+
+  const savePolicyButton =
+    document.getElementById(
+      'saveMonitoringPolicy'
+    );
+
+
+  if(savePolicyButton){
+
+    savePolicyButton.onclick =
+      saveMonitoringPolicy;
+  }
+
+
+  [
+    'policyMode',
+    'policyShotsPerHour',
+    'policyDailyTarget',
+    'policyExpectedDayHours'
+  ]
+
+  .forEach(
+    id => {
+
+      const element =
+        document.getElementById(
+          id
+        );
+
+
+      if(element){
+
+        element.onchange =
+          updatePolicyEstimate;
+
+
+        element.oninput =
+          updatePolicyEstimate;
+      }
+    }
+  );
+
+
+  const reportSelector =
+    document.getElementById(
+      'reportEmployee'
+    );
+
+
+  if(reportSelector){
+
+    reportSelector.onchange =
+      () => {
+
+        if(
+          reportSelector.value
+          !==
+          '__ALL__'
+        ){
+
+          state.selectedEmployeeId =
+            reportSelector.value;
+        }
+      };
+  }
+
+
+  const generateButton =
+    document.getElementById(
+      'generateBtn'
+    );
+
+
+  if(generateButton){
+
+    generateButton.onclick =
+      generateReport;
+  }
+
+
+  const requestReportButton =
     document.getElementById(
       'requestEmployerReport'
     );
 
-  if(req){
 
-    req.onclick = () =>
-      toast(
-        'Report request queued for White Glove review.'
-      );
+  if(requestReportButton){
+
+    requestReportButton.onclick =
+      () =>
+        toast(
+          'Report request queued for White Glove review.'
+        );
   }
 
-  const a =
+
+  document
+
+    .querySelectorAll(
+      '[data-check]'
+    )
+
+    .forEach(
+      element => {
+
+        element.onchange =
+          () => {
+
+            state.reviewerChecks[
+              Number(
+                element.dataset.check
+              )
+            ]
+            =
+            element.checked;
+          };
+      }
+    );
+
+
+  const approveButton =
     document.getElementById(
       'approveBtn'
     );
 
-  if(a){
 
-    a.onclick = () => {
+  if(approveButton){
 
-      if(
-        !state.reviewerChecks.every(
-          Boolean
-        )
-      ){
+    approveButton.onclick =
+      () => {
+
+        if(
+          !state.reviewerChecks.every(
+            Boolean
+          )
+        ){
+
+          toast(
+            'Complete all reviewer checks before approval.'
+          );
+
+          return;
+        }
+
+
+        state.reportStatus =
+          'Approved';
+
+
+        render();
+
 
         toast(
-          'Complete all reviewer checks before approval.'
+          'Report approved by WGM reviewer.'
         );
-
-        return;
-      }
-
-      state.reportStatus =
-        'Approved';
-
-      render();
-
-      toast(
-        'Report approved by WGM reviewer.'
-      );
-    };
+      };
   }
 
-  document
-    .querySelectorAll(
-      '[data-check]'
-    )
-    .forEach(
-      x => {
 
-        x.onchange = () => {
-
-          state.reviewerChecks[
-            +x.dataset.check
-          ] =
-            x.checked;
-        };
-      }
-    );
-
-  const p =
+  const previewButton =
     document.getElementById(
       'previewReport'
     );
 
-  if(p){
 
-    p.onclick = () => {
+  if(previewButton){
 
-      state.page =
-        'reportPreview';
+    previewButton.onclick =
+      () => {
 
-      render();
-    };
+        state.page =
+          'reportPreview';
+
+        render();
+      };
   }
 
-  const rel =
+
+  const releaseButton =
     document.getElementById(
       'releaseBtn'
     );
 
-  if(rel){
 
-    rel.onclick = () => {
+  if(releaseButton){
 
-      if(
-        state.reportStatus!=='Released'
-      ){
+    releaseButton.onclick =
+      () => {
+
+        if(
+          state.reportStatus
+          ===
+          'Released'
+        ){
+          return;
+        }
+
 
         const e =
           employeeById(
@@ -6084,134 +10521,122 @@ function bind(){
           ||
           employee();
 
+
         state.reportStatus =
           'Released';
 
+
         state.deliveryQueue.push({
-          employeeId:e.id,
-          employer:e.employer,
-          connectionId:e.connectionId,
-          period:{
-            ...state.reportPeriod
-          },
-          status:'queued'
+
+          employeeId:
+            e.id,
+
+          employer:
+            e.employer,
+
+          connectionId:
+            e.connectionId,
+
+          period:
+            {
+              ...state.reportPeriod
+            },
+
+          status:
+            'queued'
         });
 
+
         render();
+
 
         toast(
           'Released. Future GHL delivery event queued.'
         );
-      }
-    };
+      };
   }
 
-  const role =
-    document.getElementById(
-      'roleSwitcher'
-    );
 
-  if(role){
-
-    role.onchange = () =>
-      setRole(
-        role.value
-      );
-  }
-
-  const empSwitch =
-    document.getElementById(
-      'employerSwitcher'
-    );
-
-  if(empSwitch){
-
-    empSwitch.onchange = () => {
-
-      state.portalEmployer =
-        empSwitch.value;
-
-      localStorage.setItem(
-        'wgmPortalEmployer',
-        state.portalEmployer
-      );
-
-      const team =
-        portalEmployees();
-
-      state.selectedEmployeeId =
-        team[0]?.id
-        ||
-        '';
-
-      render();
-    };
-  }
-
-  const batch =
+  const batchGreen =
     document.getElementById(
       'batchGreen'
     );
 
-  if(batch){
 
-    batch.onclick = () => {
+  if(batchGreen){
 
-      const eligible =
-        activeEmployees().filter(
-          e =>
-            reviewColor(e)
-            ===
-            'Green'
-        ).length;
+    batchGreen.onclick =
+      () => {
 
-      toast(
-        `${eligible} Green report(s) selected for batch approval. Yellow/Red reports remain excluded.`
-      );
-    };
+        const eligible =
+          activeEmployees().filter(
+            e =>
+              reviewColor(e)
+              ===
+              'Green'
+          ).length;
+
+
+        toast(
+          `${eligible} Green report(s) selected for batch approval. Yellow/Red reports remain excluded.`
+        );
+      };
   }
 
-  const pr =
+
+  const printButton =
     document.getElementById(
       'printReport'
     );
 
-  if(pr){
 
-    pr.onclick =
+  if(printButton){
+
+    printButton.onclick =
       () =>
         window.print();
   }
 }
 
+
+/* ==========================================================
+   INITIALIZE
+   ========================================================== */
+
 async function initializeApp(){
 
-  try{
+  try {
 
-    const response =
+    const healthResponse =
       await fetch(
         '/api/health'
       );
 
+
     const health =
-      await response.json();
+      await healthResponse.json();
+
 
     state.mode =
       health.mode==='live'
         ? 'LIVE'
         : 'DEMO';
 
+
     if(
       state.mode==='LIVE'
     ){
 
       state.syncMessage =
-        `Live Scrin configuration detected. ${
-          health.connectionCount??'—'
-        } connection(s) configured.`;
+        (
+          'Live Scrin configuration detected. '
+          +
+          `${health.connectionCount??'—'} connection(s) configured.`
+        );
     }
 
-  }catch(error){
+
+  } catch(error){
 
     console.error(
       'Could not determine WGM connection mode:',
@@ -6219,31 +10644,36 @@ async function initializeApp(){
     );
   }
 
-  try{
 
-    const response =
+  try {
+
+    const connectionResponse =
       await fetch(
         '/api/scrin/connections'
       );
 
-    const data =
-      await response.json();
+
+    const connectionData =
+      await connectionResponse.json();
+
 
     if(
-      response.ok
+      connectionResponse.ok
       &&
       Array.isArray(
-        data.connections
+        connectionData.connections
       )
     ){
 
       state.connections =
-        data.connections;
+        connectionData.connections;
+
 
       saveConnections();
     }
 
-  }catch(error){
+
+  } catch(error){
 
     console.error(
       'Could not load Scrin connections:',
@@ -6251,13 +10681,17 @@ async function initializeApp(){
     );
   }
 
+
   if(
     state.role==='employer'
   ){
+
     ensureEmployerSelection();
   }
 
+
   render();
 }
+
 
 initializeApp();
