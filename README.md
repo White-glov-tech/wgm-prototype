@@ -88,3 +88,4 @@ Later the GHL consultant can consume that event to send the employer email/SMS, 
 - Browser localStorage is used only to preserve prototype employer mappings/context. Production should move this to the WGM database.
 - Screenshot URLs should not be permanently copied until Scrin's retention/data-processing terms are agreed.
 - The first version retrieves screenshot metadata for report evidence. Selective image-level AI review can be added later for exceptions.
+
