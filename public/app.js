@@ -1,816 +1,174 @@
-/* ==========================================================
-   WHITE GLOVE MONITOR — PROTOTYPE V1.7
-   OFFICIAL REPORT ENGINE FRONTEND
-   ========================================================== */
+/* WHITE GLOVE MONITOR — V1.8 | FIXED FRAUD SCREENING REPORT */
+const WGM_LOGO='/wgm-logo.png';
 
-const state = {
-  page: 'dashboard',
-  employeeTab: 'overview',
-  mode: 'DEMO',
-  employees: [],
-  connections: [],
-  selectedEmployeeId: '',
-  reportStatus: 'Not generated',
-  report: null,
-  reportEmployeeId: null,
-  reportAnalytics: null,
-  reportPrevious: null,
-  reportComparison: null,
-  reportMetadata: null,
-  reviewerChecks: [true, true, true, true, true],
-  reportPeriod: { from: '2026-09-01', to: '2026-09-30' },
-  deliveryQueue: [],
-  toast: null,
-  syncMessage: 'Demo data loaded. Connect Scrin to replace this with live employees.',
-  role: localStorage.getItem('wgmRole') || 'owner',
-  portalEmployer: localStorage.getItem('wgmPortalEmployer') || '',
-  showAddConnection: false,
-  releasedReports: [],
-  notifications: [],
-  selectedReleaseId: '',
+const state={
+  page:'dashboard',
+  tab:'overview',
+  mode:'DEMO',
+  employees:[],
+  connections:[],
+  selectedEmployeeId:'',
+  role:localStorage.getItem('wgmRole')||'owner',
+  portalEmployer:localStorage.getItem('wgmPortalEmployer')||'',
+  period:{from:'2026-09-01',to:'2026-09-30'},
+  reportStatus:'Not generated',
+  reportEmployeeId:'',
+  report:null,
+  analytics:null,
+  meta:null,
+  reviewerChecks:[true,true,true,true,true],
+  reviewerName:localStorage.getItem('wgmReviewerName')||'White Glove Reviewer',
+  reviewedShotIds:[],
+  resolvedFindings:[],
+  released:[],
+  notifications:[],
+  selectedReleaseId:'',
+  syncMessage:'Demo data loaded. Connect Scrin to load live employees.',
+  toast:null
 };
 
-const demoEmployees = [
-  {
-    id: 'demo-main::477279',
-    connectionId: 'demo-main',
-    connectionName: 'Demo Scrin Connection',
-    connectionType: 'shared',
-    connectionEmployer: '',
-    employerLocked: false,
-    employmentId: '477279',
-    name: 'Maria Gadin',
-    initials: 'MG',
-    employer: 'Grider & Peterson Real Estate',
-    scrinCompany: 'WGH Scrin Account',
-    source: 'WGH Managed',
-    role: 'Virtual Assistant',
-    timezone: 'UTC-07:00',
-    timezoneOffsetMinutes: -420,
-    schedule: 'Monday–Friday · 8 hours/day · 40 hours/week',
-    expectedHours: 160,
-    trackedHours: 161.42,
-    activeDays: 20,
-    excluded: false,
-    reportingStatus: 'Ready',
-    context: 'No approved leave or schedule adjustment for the benchmark month.',
+const demo=[{
+  id:'demo-main::477279',
+  connectionId:'demo-main',
+  connectionName:'Demo Scrin Connection',
+  employmentId:'477279',
+  name:'Sample team member',
+  initials:'ST',
+  employer:'Sample employer',
+  role:'Virtual Assistant',
+  timezone:'Pacific time',
+  timezoneOffsetMinutes:-420,
+  expectedHours:160,
+  excluded:false,
+  reportingStatus:'Ready',
+  shots:[],
+  daySummary:null,
+  lastAnalytics:null
+}];
 
-    baseline: {
-      clientCompany: 'Grider & Peterson Real Estate',
-      primaryContact: '',
-      startDate: '',
-      generalRole: 'Virtual Assistant',
-      employmentType: 'Full-time',
-      expectedHoursPerWeek: 40,
-      expectedHoursPerDay: 8,
-      normalWorkingDays: 'Monday–Friday',
-      timezone: 'UTC-07:00',
-      generalSchedule: 'Monday–Friday · 8 hours/day · 40 hours/week',
-      scheduleFlexibility: 'Standard client-approved flexibility',
-      coreAvailability: '',
-      commonApplications:
-        'Outlook, Canva, MLS/property systems, browser research',
-      knownOffComputerWork: '',
-      recurringMeetings: '',
-      broadWorkstreams:
-        'Marketing / content; Listings / property; Files / documents; Email & communication; CRM & lead follow-up'
-    },
-
-    monthlyContexts: {},
-
-    monitoringPolicy: {
-      enabled: true,
-      mode: 'hourly',
-      screenshotsPerHour: 12,
-      dailyTarget: 96,
-      expectedDayHours: 8,
-      activityTracking: true,
-      appUrlTracking: true,
-      autoPauseMinutes: 5,
-      employeeNotification: true,
-      providerSyncStatus:
-        'Saved in WGM · provider write not connected'
-    },
-
-    workstreams: [
-      ['Marketing / content', 30],
-      ['Listings / property', 22],
-      ['Files / documents', 16],
-      ['Email & communication', 13],
-      ['CRM & lead follow-up', 11],
-      ['Research / AI', 8]
-    ],
-
-    apps: [
-      ['Outlook / Microsoft', 31],
-      ['Canva', 20],
-      ['NavicaMLS', 18],
-      ['Browser research', 14],
-      ['WhatsApp', 9],
-      ['Other', 8]
-    ],
-
-    weeks: [],
-    shots: []
+const load=(k,f)=>{
+  try{
+    return JSON.parse(localStorage.getItem(k)||'null')??f;
+  }catch{
+    return f;
   }
+};
+
+const save=(k,v)=>{
+  try{
+    localStorage.setItem(k,JSON.stringify(v));
+  }catch{}
+};
+
+state.employees=load('wgmEmployees',demo);
+state.connections=load('wgmConnections',[]);
+state.released=load('wgmFraudReleasedReports',[]);
+state.notifications=load('wgmFraudNotifications',[]);
+state.selectedEmployeeId=state.employees[0]?.id||'';
+
+const saveEmployees=()=>save('wgmEmployees',state.employees);
+const saveConnections=()=>save('wgmConnections',state.connections);
+const saveReleased=()=>save('wgmFraudReleasedReports',state.released);
+const saveNotifications=()=>save('wgmFraudNotifications',state.notifications);
+
+const esc=(v='')=>String(v).replace(
+  /[&<>"']/g,
+  c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c])
+);
+
+const ini=(n='')=>
+  n.split(/\s+/)
+   .filter(Boolean)
+   .slice(0,2)
+   .map(x=>x[0])
+   .join('')
+   .toUpperCase()||'VA';
+
+const hrs=(h=0)=>{
+  const m=Math.max(
+    0,
+    Math.round(Number(h||0)*60)
+  );
+
+  return `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
+};
+
+const statusCls=(s='')=>
+  /Released|Approved|Ready|Connected|Clear|Green|Complete|Active/i.test(s)
+    ?'green'
+    :/Review|Pending|Draft|Yellow|Queued|Configured/i.test(s)
+      ?'amber'
+      :/Failed|Error|Red/i.test(s)
+        ?'red'
+        :'blue';
+
+const active=()=>state.employees.filter(e=>!e.excluded);
+
+const empById=id=>
+  state.employees.find(
+    e=>String(e.id)===String(id)
+  );
+
+const employers=()=>[
+  ...new Set(
+    active()
+      .map(e=>e.employer)
+      .filter(Boolean)
+  )
 ];
 
-
-/* ==========================================================
-   LOCAL STORAGE
-   ========================================================== */
-
-function loadJson(
-  key,
-  fallback
-) {
-
-  try {
-
-    const value =
-      JSON.parse(
-        localStorage.getItem(key)
-        ||
-        'null'
-      );
-
-    return value ?? fallback;
-
-  } catch {
-
-    return fallback;
-  }
-}
-
-
-function saveJson(
-  key,
-  value
-) {
-
-  try {
-
-    localStorage.setItem(
-      key,
-      JSON.stringify(value)
-    );
-
-  } catch {}
-}
-
-
-function ensureEmployeeShape(
-  e
-) {
-
-  if(
-    !e.baseline
-  ) {
-
-    e.baseline = {
-      clientCompany:
-        e.employer
-        ||
-        '',
-
-      primaryContact:
-        '',
-
-      startDate:
-        '',
-
-      generalRole:
-        e.role
-        ||
-        'Virtual Assistant',
-
-      employmentType:
-        'Full-time',
-
-      expectedHoursPerWeek:
-        40,
-
-      expectedHoursPerDay:
-        8,
-
-      normalWorkingDays:
-        'Monday–Friday',
-
-      timezone:
-        e.timezone
-        ||
-        '',
-
-      generalSchedule:
-        e.schedule
-        ||
-        '',
-
-      scheduleFlexibility:
-        '',
-
-      coreAvailability:
-        '',
-
-      commonApplications:
-        (e.apps || [])
-          .map(
-            x =>
-              x[0]
-          )
-          .join(', '),
-
-      knownOffComputerWork:
-        '',
-
-      recurringMeetings:
-        '',
-
-      broadWorkstreams:
-        (e.workstreams || [])
-          .map(
-            x =>
-              x[0]
-          )
-          .join('; ')
-    };
-  }
-
-
-  if(
-    !e.monthlyContexts
-    ||
-    typeof e.monthlyContexts
-    !==
-    'object'
-  ) {
-
-    e.monthlyContexts = {};
-  }
-
-
-  if(
-    !e.monitoringPolicy
-  ) {
-
-    e.monitoringPolicy =
-      defaultMonitoringPolicy();
-  }
-
-
-  return e;
-}
-
-
-state.employees =
-  (
-    loadJson(
-      'wgmEmployees',
-      demoEmployees
-    )
-    ||
-    demoEmployees
-  )
-  .map(
-    ensureEmployeeShape
-  );
-
-
-state.connections =
-  loadJson(
-    'wgmConnections',
-    []
-  );
-
-
-state.releasedReports =
-  loadJson(
-    'wgmReleasedReports',
-    []
-  );
-
-
-state.notifications =
-  loadJson(
-    'wgmNotifications',
-    []
-  );
-
-
-if(
-  state.employees.length
-) {
-
-  state.selectedEmployeeId =
-    state.employees[0].id;
-}
-
-
-function saveEmployees() {
-
-  saveJson(
-    'wgmEmployees',
-    state.employees
-  );
-}
-
-
-function saveConnections() {
-
-  saveJson(
-    'wgmConnections',
-    state.connections
-  );
-}
-
-
-function saveReleasedReports() {
-
-  saveJson(
-    'wgmReleasedReports',
-    state.releasedReports
-  );
-}
-
-
-function saveNotifications() {
-
-  saveJson(
-    'wgmNotifications',
-    state.notifications
-  );
-}
-
-
-/* ==========================================================
-   GENERAL HELPERS
-   ========================================================== */
-
-function escapeHtml(
-  v = ''
-) {
-
-  return String(v)
-    .replace(
-      /[&<>"']/g,
-      m => ({
-        '&':
-          '&amp;',
-
-        '<':
-          '&lt;',
-
-        '>':
-          '&gt;',
-
-        '"':
-          '&quot;',
-
-        "'":
-          '&#39;'
-      }[m])
-    );
-}
-
-
-function initials(
-  name = ''
-) {
-
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(
-      x =>
-        x[0]
-    )
-    .join('')
-    .toUpperCase()
-    ||
-    'VA';
-}
-
-
-function hoursLabel(
-  decimal = 0
-) {
-
-  const total =
-    Math.max(
-      0,
-      Math.round(
-        Number(decimal || 0)
-        *
-        60
+const month=d=>
+  d
+    ?new Date(`${d}T00:00:00Z`).toLocaleString(
+        'en-US',
+        {
+          month:'long',
+          year:'numeric',
+          timeZone:'UTC'
+        }
       )
-    );
+    :'Reporting period';
 
-  return (
-    `${Math.floor(total / 60)}h `
-    +
-    `${String(total % 60).padStart(2, '0')}m`
-  );
-}
+const timezone=e=>
+  e?.baseline?.timezone||
+  e?.timezone||
+  'Employee timezone';
 
+const metric=(l,v,s)=>`
+  <div class="card metric">
+    <div class="label">${l}</div>
+    <div class="value">${v}</div>
+    <div class="delta">${s}</div>
+  </div>
+`;
 
-function percentLabel(
-  v
-) {
-
-  return (
-    v === null
-    ||
-    v === undefined
-    ||
-    Number.isNaN(
-      Number(v)
-    )
-  )
-
-    ? '—'
-
-    : `${Number(v).toFixed(
-        Number(v) % 1
-          ? 1
-          : 0
-      )}%`;
-}
-
-
-function signedNumber(
-  v,
-  suffix = ''
-) {
-
-  if(
-    v === null
-    ||
-    v === undefined
-    ||
-    Number.isNaN(
-      Number(v)
-    )
-  ) {
-
-    return '—';
-  }
-
-
-  const n =
-    Number(v);
-
-
-  return (
-    `${n > 0 ? '+' : ''}`
-    +
-    `${n}`
-    +
-    suffix
-  );
-}
-
-
-function deepClone(
-  v
-) {
-
-  return JSON.parse(
-    JSON.stringify(v)
-  );
-}
-
-
-function monthKeyFromDate(
-  date
-) {
-
-  return String(
-    date
-    ||
-    ''
-  )
-  .slice(
-    0,
-    7
-  );
-}
-
-
-function monthLabel(
-  date
-) {
-
-  if(
-    !date
-  ) {
-
-    return 'Reporting period';
-  }
-
-
-  return new Date(
-    `${date}T00:00:00Z`
-  )
-  .toLocaleString(
-    'en-US',
-    {
-      month:
-        'long',
-
-      year:
-        'numeric',
-
-      timeZone:
-        'UTC'
-    }
-  );
-}
-
-
-function periodLabel(
-  period = state.reportPeriod
-) {
-
-  return monthLabel(
-    period?.from
-  );
-}
-
-
-function statusClass(
-  s = ''
-) {
-
-  if(
-    /Released|Approved|Ready|Connected|Paid|Active|Green|Complete/i
-      .test(s)
-  ) {
-
-    return 'green';
-  }
-
-
-  if(
-    /Context|Pending|Review|Queued|Planned|Configured|Yellow|Draft/i
-      .test(s)
-  ) {
-
-    return 'amber';
-  }
-
-
-  if(
-    /Failed|Concern|Hold|Error|Suspended|Red/i
-      .test(s)
-  ) {
-
-    return 'red';
-  }
-
-
-  return 'blue';
-}
-
-
-function toast(
-  message
-) {
-
-  state.toast =
-    message;
-
+function toast(m){
+  state.toast=m;
   render();
 
-
   setTimeout(
-    () => {
-
-      state.toast =
-        null;
-
+    ()=>{
+      state.toast=null;
       render();
     },
     2300
   );
 }
 
-
-function metric(
-  label,
-  value,
-  sub
-) {
-
-  return `
-    <div class="card metric">
-
-      <div class="label">
-        ${label}
-      </div>
-
-      <div class="value">
-        ${value}
-      </div>
-
-      <div class="delta">
-        ${sub}
-      </div>
-
-    </div>
-  `;
-}
-
-
-function mixBar(
-  label,
-  value
-) {
-
-  const pct =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        Number(
-          value
-          ||
-          0
-        )
-      )
-    );
-
-
-  return `
-    <div class="work-row">
-
-      <b>
-        ${escapeHtml(label)}
-      </b>
-
-      <div class="progress">
-
-        <span
-          style="width:${pct}%"
-        ></span>
-
-      </div>
-
-      <span>
-        ${Math.round(pct)}%
-      </span>
-
-    </div>
-  `;
-}
-
-
-/* ==========================================================
-   EMPLOYEE / TENANCY HELPERS
-   ========================================================== */
-
-function activeEmployees() {
-
-  return state.employees.filter(
-    e =>
-      !e.excluded
-  );
-}
-
-
-function mappedEmployers() {
-
-  return [
-    ...new Set(
-      activeEmployees()
-        .map(
-          e =>
-            e.employer
-        )
-        .filter(Boolean)
-    )
-  ];
-}
-
-
-function employeeById(
-  id
-) {
-
-  return state.employees.find(
-    e =>
-      String(e.id)
-      ===
-      String(id)
-  );
-}
-
-
-function latestAnalytics(
-  e
-) {
-
-  return e?.lastAnalytics
-  ||
-  null;
-}
-
-
-function employeeScheduleCoverage(
-  e
-) {
-
-  return (
-    latestAnalytics(e)
-      ?.metrics
-      ?.scheduleCoveragePercent
-
-    ??
-
-    (
-      Number(
-        e?.expectedHours
-      )
-      >
-      0
-
-        ? Math.min(
-            100,
-
-            Math.round(
-              Number(
-                e.trackedHours
-                ||
-                0
-              )
-              /
-              Number(
-                e.expectedHours
-              )
-              *
-              1000
-            )
-            /
-            10
-          )
-
-        : null
-    )
-  );
-}
-
-
-function employeeEvidenceCoverage(
-  e
-) {
-
-  return (
-    latestAnalytics(e)
-      ?.evidence
-      ?.evidenceCoveragePercent
-
-    ??
-
-    null
-  );
-}
-
-
-function employeeReviewState(
-  e
-) {
-
-  return (
-    latestAnalytics(e)
-      ?.review
-      ?.status
-
-    ||
-
-    'Green'
-  );
-}
-
-
-function ensureEmployerSelection() {
-
-  const employers =
-    mappedEmployers();
-
+function ensureEmployer(){
+  const es=employers();
 
   if(
-    !state.portalEmployer
-    ||
-    !employers.includes(
-      state.portalEmployer
-    )
-  ) {
-
-    state.portalEmployer =
-      employers[0]
-      ||
-      '';
-
+    !state.portalEmployer||
+    !es.includes(state.portalEmployer)
+  ){
+    state.portalEmployer=es[0]||'';
 
     localStorage.setItem(
       'wgmPortalEmployer',
@@ -818,596 +176,194 @@ function ensureEmployerSelection() {
     );
   }
 
-
-  const team =
-    activeEmployees()
-      .filter(
-        e =>
-          e.employer
-          ===
-          state.portalEmployer
-      );
-
+  const t=active().filter(
+    e=>e.employer===state.portalEmployer
+  );
 
   if(
-    team.length
-    &&
-    !team.some(
-      e =>
-        String(e.id)
-        ===
-        String(
-          state.selectedEmployeeId
-        )
+    t.length&&
+    !t.some(
+      e=>String(e.id)===String(state.selectedEmployeeId)
     )
-  ) {
-
-    state.selectedEmployeeId =
-      team[0].id;
+  ){
+    state.selectedEmployeeId=t[0].id;
   }
 }
 
+const portal=()=>{
+  ensureEmployer();
 
-function portalEmployees() {
+  return active().filter(
+    e=>e.employer===state.portalEmployer
+  );
+};
 
-  ensureEmployerSelection();
-
-
-  return activeEmployees()
-    .filter(
-      e =>
-        e.employer
-        ===
-        state.portalEmployer
-    );
-}
-
-
-function employee() {
-
-  if(
-    state.role
-    ===
-    'employer'
-  ) {
-
-    const team =
-      portalEmployees();
-
-
+function currentEmployee(){
+  if(state.role==='employer'){
     return (
-      team.find(
-        e =>
-          String(e.id)
-          ===
-          String(
-            state.selectedEmployeeId
-          )
-      )
-
-      ||
-
-      team[0]
-
-      ||
-
+      portal().find(
+        e=>String(e.id)===String(state.selectedEmployeeId)
+      )||
+      portal()[0]||
       null
     );
   }
 
-
-  if(
-    state.role
-    ===
-    'employee'
-  ) {
-
-    const e =
-      employeeById(
-        state.selectedEmployeeId
-      );
-
-
+  if(state.role==='employee'){
     return (
-      e
-      &&
-      !e.excluded
-    )
-
-      ? e
-
-      : (
-          activeEmployees()[0]
-          ||
-          null
-        );
+      empById(state.selectedEmployeeId)||
+      active()[0]||
+      null
+    );
   }
 
-
   return (
-    employeeById(
-      state.selectedEmployeeId
-    )
-
-    ||
-
-    activeEmployees()[0]
-
-    ||
-
-    state.employees[0]
-
-    ||
-
+    empById(state.selectedEmployeeId)||
+    active()[0]||
     null
   );
 }
 
+const unread=employer=>
+  state.notifications.filter(
+    n=>
+      n.employer===employer&&
+      !n.read
+  ).length;
 
-function visibleEmployees() {
+const employerReports=employer=>
+  state.released
+    .filter(
+      r=>r.employer===employer
+    )
+    .sort(
+      (a,b)=>
+        String(b.releasedAt)
+          .localeCompare(String(a.releasedAt))
+    );
 
-  if(
-    state.role
-    ===
-    'employer'
-  ) {
+const employeeReports=id=>
+  state.released
+    .filter(
+      r=>String(r.employeeId)===String(id)
+    )
+    .sort(
+      (a,b)=>
+        String(b.releasedAt)
+          .localeCompare(String(a.releasedAt))
+    );
 
-    return portalEmployees();
-  }
+const nextVersion=(id,p)=>
+  state.released.filter(
+    r=>
+      String(r.employeeId)===String(id)&&
+      r.period?.from===p.from&&
+      r.period?.to===p.to
+  ).length+1;
 
-
-  if(
-    state.role
-    ===
-    'employee'
-  ) {
-
-    const e =
-      employee();
-
-    return e
-      ? [e]
-      : [];
-  }
-
-
-  return activeEmployees();
-}
-
-
-/* ==========================================================
-   ROLE / REPORT HISTORY HELPERS
-   ========================================================== */
-
-function roleLabel() {
-
-  return {
-    owner:
-      'WGM Owner',
-
-    reviewer:
-      'White Glove Reviewer',
-
-    employer:
-      'Employer Portal',
-
-    employee:
-      'Employee Portal'
-  }[state.role]
-
-  ||
-
-  'WGM Owner';
-}
-
-
-function roleSubLabel() {
-
-  return {
-    owner:
-      'Super Admin',
-
-    reviewer:
-      'Assigned Accounts',
-
-    employer:
-      'Company Owner / Admin',
-
-    employee:
-      'My Work'
-  }[state.role]
-
-  ||
-
-  'Super Admin';
-}
-
-
-function setRole(
-  role
-) {
-
-  state.role =
-    role;
-
+function setRole(r){
+  state.role=r;
 
   localStorage.setItem(
     'wgmRole',
-    role
+    r
   );
 
+  state.page='dashboard';
+  state.tab='overview';
 
-  state.page =
-    'dashboard';
-
-
-  state.employeeTab =
-    'overview';
-
-
-  if(
-    role
-    ===
-    'employer'
-  ) {
-
-    ensureEmployerSelection();
+  if(r==='employer'){
+    ensureEmployer();
   }
-
-
-  if(
-    role
-    ===
-    'employee'
-  ) {
-
-    const e =
-      employeeById(
-        state.selectedEmployeeId
-      );
-
-
-    if(
-      !e
-      ||
-      e.excluded
-    ) {
-
-      state.selectedEmployeeId =
-        activeEmployees()[0]?.id
-        ||
-        '';
-    }
-  }
-
 
   render();
 }
 
+const roleName=()=>({
+  owner:'WGM Owner',
+  reviewer:'White Glove Reviewer',
+  employer:'Employer Portal',
+  employee:'Employee Portal'
+})[state.role]||'WGM Owner';
 
-function unreadNotificationsForEmployer(
-  employer
-) {
-
-  return state.notifications.filter(
-    n =>
-      n.employer
-      ===
-      employer
-      &&
-      !n.read
-  )
-  .length;
-}
-
-
-function employerReleasedReports(
-  employer
-) {
-
-  return state.releasedReports
-    .filter(
-      r =>
-        r.employer
-        ===
-        employer
-    )
-    .sort(
-      (a, b) =>
-        String(
-          b.releasedAt
-        )
-        .localeCompare(
-          String(
-            a.releasedAt
-          )
-        )
-    );
-}
-
-
-function employeeReleasedReports(
-  employeeId
-) {
-
-  return state.releasedReports
-    .filter(
-      r =>
-        String(
-          r.employeeId
-        )
-        ===
-        String(
-          employeeId
-        )
-    )
-    .sort(
-      (a, b) =>
-        String(
-          b.releasedAt
-        )
-        .localeCompare(
-          String(
-            a.releasedAt
-          )
-        )
-    );
-}
-
-
-function nextReportVersion(
-  employeeId,
-  period
-) {
-
-  return (
-    state.releasedReports
-      .filter(
-        r =>
-          String(
-            r.employeeId
-          )
-          ===
-          String(
-            employeeId
-          )
-          &&
-          r.period?.from
-          ===
-          period.from
-          &&
-          r.period?.to
-          ===
-          period.to
-      )
-      .length
-
-    +
-    1
-  );
-}
-
-
-/* ==========================================================
-   NAVIGATION
-   ========================================================== */
-
-function navButton(
-  id,
-  label,
-  badge = ''
-) {
-
+function navBtn(id,label,b=''){
   return `
     <button
       data-page="${id}"
-      class="${
-        state.page === id
-          ? 'active'
-          : ''
-      }"
+      class="${state.page===id?'active':''}"
     >
-
-      <span>
-        ${label}
-      </span>
+      <span>${label}</span>
 
       ${
-        badge
-
-          ? `
-            <span class="badge">
-              ${badge}
-            </span>
-            `
-
-          : ''
+        b
+          ?`<span class="badge">${b}</span>`
+          :''
       }
-
     </button>
   `;
 }
 
-
-function navMarkup() {
-
-  if(
-    state.role
-    ===
-    'reviewer'
-  ) {
-
-    return [
-      navButton(
-        'dashboard',
-        'Reviewer Home'
-      ),
-
-      navButton(
+function nav(){
+  if(state.role==='reviewer'){
+    return (
+      navBtn('dashboard','Reviewer Home')+
+      navBtn(
         'review',
         'Review Queue',
-        state.reportStatus === 'Draft ready'
-          ? '1'
-          : ''
-      ),
-
-      navButton(
-        'monitoring',
-        'Evidence Review'
-      ),
-
-      navButton(
-        'reports',
-        'Reports'
-      )
-    ].join('');
+        state.reportStatus==='Draft ready'?'1':''
+      )+
+      navBtn('reports','Reports')+
+      navBtn('monitoring','Evidence Review')
+    );
   }
 
+  if(state.role==='employer'){
+    const n=unread(state.portalEmployer);
 
-  if(
-    state.role
-    ===
-    'employer'
-  ) {
-
-    const unread =
-      unreadNotificationsForEmployer(
-        state.portalEmployer
-      );
-
-
-    return [
-      navButton(
+    return (
+      navBtn(
         'dashboard',
         'Overview',
-        unread
-          ? String(unread)
-          : ''
-      ),
-
-      navButton(
-        'employees',
-        'My Team'
-      ),
-
-      navButton(
-        'monitoring',
-        'Monitoring'
-      ),
-
-      navButton(
+        n?String(n):''
+      )+
+      navBtn('employees','My Team')+
+      navBtn(
         'reports',
         'Reports',
-        unread
-          ? String(unread)
-          : ''
-      ),
-
-      navButton(
-        'subscriptions',
-        'Billing'
-      )
-    ].join('');
+        n?String(n):''
+      )+
+      navBtn('monitoring','Monitoring')
+    );
   }
 
-
-  if(
-    state.role
-    ===
-    'employee'
-  ) {
-
-    return [
-      navButton(
-        'dashboard',
-        'My Activity'
-      ),
-
-      navButton(
-        'monitoring',
-        'My Monitoring'
-      ),
-
-      navButton(
-        'reports',
-        'My Reports'
-      )
-    ].join('');
+  if(state.role==='employee'){
+    return (
+      navBtn('dashboard','My Activity')+
+      navBtn('monitoring','My Monitoring')+
+      navBtn('reports','My Reports')
+    );
   }
 
-
-  return [
-    navButton(
-      'dashboard',
-      'Dashboard'
-    ),
-
-    navButton(
-      'companies',
-      'Companies'
-    ),
-
-    navButton(
-      'employees',
-      'Employees'
-    ),
-
-    navButton(
-      'monitoring',
-      'Monitoring'
-    ),
-
-    navButton(
-      'reports',
-      'Reports'
-    ),
-
-    navButton(
+  return (
+    navBtn('dashboard','Dashboard')+
+    navBtn('employees','Employees')+
+    navBtn('monitoring','Monitoring')+
+    navBtn('reports','Reports')+
+    navBtn(
       'review',
       'Review Queue',
-      state.reportStatus === 'Draft ready'
-        ? '1'
-        : ''
-    ),
-
-    navButton(
-      'subscriptions',
-      'Subscriptions'
-    ),
-
-    navButton(
-      'dataSources',
-      'Data Sources'
-    ),
-
-    navButton(
-      'settings',
-      'Settings'
-    )
-  ].join('');
+      state.reportStatus==='Draft ready'?'1':''
+    )+
+    navBtn('dataSources','Data Sources')+
+    navBtn('settings','Settings')
+  );
 }
 
-
-/* ==========================================================
-   SHELL
-   ========================================================== */
-
-function shell(
-  content,
-  title
-) {
-
-  const unread =
-    state.role
-    ===
-    'employer'
-
-      ? unreadNotificationsForEmployer(
-          state.portalEmployer
-        )
-
-      : 0;
-
+function shell(content,title){
+  const n=
+    state.role==='employer'
+      ?unread(state.portalEmployer)
+      :0;
 
   return `
     <div class="app-shell">
@@ -1416,9 +372,7 @@ function shell(
 
         <div class="brand">
 
-          <div class="brand-mark">
-            W
-          </div>
+          <div class="brand-mark">W</div>
 
           <div>
 
@@ -1434,25 +388,19 @@ function shell(
 
         </div>
 
-
         <nav class="nav">
-          ${navMarkup()}
+          ${nav()}
         </nav>
-
 
         <div class="sidebar-bottom">
 
           <div class="user-chip">
 
-            <div class="avatar">
-              W
-            </div>
+            <div class="avatar">W</div>
 
             <div>
 
-              <b>
-                ${roleLabel()}
-              </b>
+              <b>${roleName()}</b>
 
               <div
                 style="
@@ -1460,7 +408,11 @@ function shell(
                   opacity:.7
                 "
               >
-                ${roleSubLabel()}
+                ${
+                  state.role==='reviewer'
+                    ?'Human Review'
+                    :'Prototype'
+                }
               </div>
 
             </div>
@@ -1471,15 +423,11 @@ function shell(
 
       </aside>
 
-
       <main class="main">
 
         <header class="topbar">
 
-          <h1>
-            ${title}
-          </h1>
-
+          <h1>${title}</h1>
 
           <div
             style="
@@ -1490,24 +438,15 @@ function shell(
           >
 
             ${
-              state.role === 'employer'
-              &&
-              unread
-
-                ? `
+              n
+                ?`
                   <span class="status amber">
-
                     <span class="dot"></span>
-
-                    ${unread}
-                    new report${unread === 1 ? '' : 's'}
-
+                    ${n} new
                   </span>
-                  `
-
-                : ''
+                `
+                :''
             }
-
 
             <select
               id="roleSwitcher"
@@ -1520,64 +459,41 @@ function shell(
 
               <option
                 value="owner"
-                ${
-                  state.role === 'owner'
-                    ? 'selected'
-                    : ''
-                }
+                ${state.role==='owner'?'selected':''}
               >
                 WGM Owner
               </option>
 
               <option
                 value="reviewer"
-                ${
-                  state.role === 'reviewer'
-                    ? 'selected'
-                    : ''
-                }
+                ${state.role==='reviewer'?'selected':''}
               >
                 White Glove Reviewer
               </option>
 
               <option
                 value="employer"
-                ${
-                  state.role === 'employer'
-                    ? 'selected'
-                    : ''
-                }
+                ${state.role==='employer'?'selected':''}
               >
                 Employer Portal
               </option>
 
               <option
                 value="employee"
-                ${
-                  state.role === 'employee'
-                    ? 'selected'
-                    : ''
-                }
+                ${state.role==='employee'?'selected':''}
               >
                 Employee Portal
               </option>
 
             </select>
 
-
             <div class="mode-pill">
-
-              ${state.mode}
-              MODE
-              ·
-              V1.7
-
+              ${state.mode} MODE · FRAUD SCREENING
             </div>
 
           </div>
 
         </header>
-
 
         <section class="content">
           ${content}
@@ -1585,57 +501,32 @@ function shell(
 
       </main>
 
-
       ${
         state.toast
-
-          ? `
+          ?`
             <div class="toast">
-              ${escapeHtml(state.toast)}
+              ${esc(state.toast)}
             </div>
-            `
-
-          : ''
+          `
+          :''
       }
 
     </div>
   `;
 }
 
-
-/* ==========================================================
-   OWNER DASHBOARD
-   ========================================================== */
-
-function dashboard() {
-
-  if(
-    state.role === 'employer'
-  ) {
-
+function dashboard(){
+  if(state.role==='employer'){
     return employerDashboard();
   }
 
-
-  if(
-    state.role === 'employee'
-  ) {
-
-    return employeeDashboard();
-  }
-
-
-  if(
-    state.role === 'reviewer'
-  ) {
-
+  if(state.role==='reviewer'){
     return reviewerDashboard();
   }
 
-
-  const emps =
-    activeEmployees();
-
+  if(state.role==='employee'){
+    return employeeDashboard();
+  }
 
   return shell(
     `
@@ -1643,230 +534,119 @@ function dashboard() {
 
       <div>
 
-        <h2>
-          WGM Command Center
-        </h2>
+        <h2>WGM Command Center</h2>
 
         <p>
-
-          Scrin is the current capture source.
-
-          WGM owns the employee baseline,
-          monthly context,
-          analytics,
-          human review,
-          release
-          and employer-facing report history.
-
+          Scrin supplies monitoring evidence.
+          WGM screens screenshots,
+          requires human sign-off,
+          and releases the fixed one-page report.
         </p>
 
       </div>
 
-
-      <div class="actions">
-
-        <button
-          class="btn"
-          data-page="dataSources"
-        >
-          Data sources
-        </button>
-
-        <button
-          class="btn primary"
-          data-page="reports"
-        >
-          Generate report
-        </button>
-
-      </div>
+      <button
+        class="btn primary"
+        data-page="reports"
+      >
+        Generate screening report
+      </button>
 
     </div>
-
 
     <div class="grid metrics">
 
       ${
         metric(
-          'Scrin connections',
-          state.connections.length
-          ||
-          1,
-          'Dedicated + shared'
+          'Connections',
+          state.connections.length||1,
+          'Scrin sources'
         )
       }
 
       ${
         metric(
           'Employers',
-          mappedEmployers().length,
+          employers().length,
           'Mapped organizations'
         )
       }
 
       ${
         metric(
-          'Employees monitored',
-          emps.length,
-          'Reportable employees'
+          'Employees',
+          active().length,
+          'Reportable'
         )
       }
 
       ${
         metric(
-          'Released reports',
-          state.releasedReports.length,
-          'Saved report versions'
+          'Released screenings',
+          state.released.length,
+          'Human reviewed'
         )
       }
 
     </div>
 
+    <div class="card panel">
 
-    <div class="grid two-col">
+      <table>
 
-      <div class="card panel">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Employer</th>
+            <th>Connection</th>
+            <th>Latest report</th>
+          </tr>
+        </thead>
 
-        <div class="panel-title">
-          Connected workforce
-        </div>
+        <tbody>
 
+          ${
+            active().map(
+              e=>{
+                const r=employeeReports(e.id)[0];
 
-        <table>
+                return `
+                  <tr>
 
-          <thead>
+                    <td>
+                      <span
+                        class="row-link"
+                        data-open-id="${esc(e.id)}"
+                      >
+                        ${esc(e.name)}
+                      </span>
+                    </td>
 
-            <tr>
-              <th>Employee</th>
-              <th>Employer</th>
-              <th>Schedule</th>
-              <th>Evidence</th>
-              <th>Review</th>
-            </tr>
+                    <td>
+                      ${esc(e.employer||'Unassigned')}
+                    </td>
 
-          </thead>
+                    <td>
+                      ${esc(e.connectionName||'Scrin')}
+                    </td>
 
+                    <td>
+                      ${
+                        r
+                          ?`${esc(month(r.period.from))} · v${r.version}`
+                          :'—'
+                      }
+                    </td>
 
-          <tbody>
+                  </tr>
+                `;
+              }
+            ).join('')
+          }
 
-            ${
-              emps.map(
-                e => `
-                <tr>
+        </tbody>
 
-                  <td>
-
-                    <span
-                      class="row-link"
-                      data-open-id="${escapeHtml(e.id)}"
-                    >
-                      ${escapeHtml(e.name)}
-                    </span>
-
-                  </td>
-
-                  <td>
-                    ${escapeHtml(e.employer||'Unassigned')}
-                  </td>
-
-                  <td>
-                    ${percentLabel(employeeScheduleCoverage(e))}
-                  </td>
-
-                  <td>
-                    ${percentLabel(employeeEvidenceCoverage(e))}
-                  </td>
-
-                  <td>
-
-                    <span
-                      class="status ${statusClass(employeeReviewState(e))}"
-                    >
-
-                      <span class="dot"></span>
-
-                      ${employeeReviewState(e)}
-
-                    </span>
-
-                  </td>
-
-                </tr>
-                `
-              ).join('')
-            }
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-
-      <div class="card panel">
-
-        <div class="panel-title">
-          Official report flow
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            1. Employee baseline
-          </h4>
-
-          <p>
-
-            Permanent role,
-            schedule,
-            normal hours,
-            applications,
-            workstreams
-            and known off-computer work.
-
-          </p>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            2. Monthly context
-          </h4>
-
-          <p>
-
-            PTO,
-            holidays,
-            approved schedule changes,
-            business context,
-            employer/employee notes
-            and White Glove support activity.
-
-          </p>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            3. Release
-          </h4>
-
-          <p>
-
-            Reviewer approval creates
-            an exact released report snapshot
-            and an employer notification.
-
-          </p>
-
-        </div>
-
-      </div>
+      </table>
 
     </div>
     `,
@@ -1874,94 +654,23 @@ function dashboard() {
   );
 }
 
+function employerDashboard(){
+  const team=portal();
 
-/* ==========================================================
-   EMPLOYER DASHBOARD
-   ========================================================== */
-
-function employerDashboard() {
-
-  const team =
-    portalEmployees();
-
-
-  const unread =
-    unreadNotificationsForEmployer(
-      state.portalEmployer
-    );
-
-
-  const releases =
-    employerReleasedReports(
-      state.portalEmployer
-    );
-
-
-  const total =
-    team.reduce(
-      (s, e) =>
-        s
-        +
-        Number(
-          e.trackedHours
-          ||
-          0
-        ),
-      0
-    );
-
-
-  const evidenceValues =
-    team
-      .map(
-        employeeEvidenceCoverage
-      )
-      .filter(
-        v =>
-          v !== null
-      );
-
-
-  const avgEvidence =
-    evidenceValues.length
-
-      ? Math.round(
-          evidenceValues.reduce(
-            (a,b) =>
-              a
-              +
-              Number(b),
-            0
-          )
-          /
-          evidenceValues.length
-        )
-
-      : null;
-
-
-  const latestUnread =
+  const notices=
     state.notifications
       .filter(
-        n =>
-          n.employer
-          ===
-          state.portalEmployer
-          &&
+        n=>
+          n.employer===state.portalEmployer&&
           !n.read
       )
       .sort(
-        (a,b) =>
-          String(
-            b.createdAt
-          )
-          .localeCompare(
-            String(
-              a.createdAt
-            )
-          )
-      )[0];
+        (a,b)=>
+          String(b.createdAt)
+            .localeCompare(String(a.createdAt))
+      );
 
+  const latest=notices[0];
 
   return shell(
     `
@@ -1970,19 +679,16 @@ function employerDashboard() {
       <div>
 
         <h2>
-          ${escapeHtml(state.portalEmployer||'Employer')}
-          Workforce Overview
+          ${esc(state.portalEmployer||'Employer')}
+          Overview
         </h2>
 
         <p>
-
-          Released reports are available
-          only after White Glove human review.
-
+          Only human-reviewed released reports
+          appear here.
         </p>
 
       </div>
-
 
       <select
         id="employerSwitcher"
@@ -1990,18 +696,14 @@ function employerDashboard() {
       >
 
         ${
-          mappedEmployers().map(
-            x => `
-            <option
-              value="${escapeHtml(x)}"
-              ${
-                x === state.portalEmployer
-                  ? 'selected'
-                  : ''
-              }
-            >
-              ${escapeHtml(x)}
-            </option>
+          employers().map(
+            e=>`
+              <option
+                value="${esc(e)}"
+                ${e===state.portalEmployer?'selected':''}
+              >
+                ${esc(e)}
+              </option>
             `
           ).join('')
         }
@@ -2010,22 +712,20 @@ function employerDashboard() {
 
     </div>
 
-
     ${
-      latestUnread
-
-        ? `
+      latest
+        ?`
           <div
             class="card panel"
             style="
-              margin-bottom:16px;
-              border-left:4px solid #C9A84C
+              border-left:4px solid #C9A84C;
+              margin-bottom:16px
             "
           >
 
             <div
               class="header-row"
-              style="margin-bottom:0"
+              style="margin:0"
             >
 
               <div>
@@ -2034,22 +734,15 @@ function employerDashboard() {
                   NEW REPORT AVAILABLE
                 </div>
 
-                <h3
-                  style="margin:6px 0"
-                >
-                  ${escapeHtml(latestUnread.title)}
-                </h3>
+                <h3>${esc(latest.title)}</h3>
 
-                <p>
-                  ${escapeHtml(latestUnread.message)}
-                </p>
+                <p>${esc(latest.message)}</p>
 
               </div>
 
-
               <button
                 class="btn gold"
-                data-view-release="${escapeHtml(latestUnread.reportId)}"
+                data-view-release="${esc(latest.reportId)}"
               >
                 View Report
               </button>
@@ -2057,59 +750,47 @@ function employerDashboard() {
             </div>
 
           </div>
-          `
-
-        : ''
+        `
+        :''
     }
-
 
     <div class="grid metrics">
 
       ${
         metric(
-          'Active team members',
+          'Team members',
           team.length,
-          'Only this employer'
-        )
-      }
-
-      ${
-        metric(
-          'Tracked this period',
-          hoursLabel(total),
-          'Visible team'
-        )
-      }
-
-      ${
-        metric(
-          'Average evidence coverage',
-          avgEvidence === null
-            ? '—'
-            : `${avgEvidence}%`,
-          'Last analyzed periods'
+          'This employer'
         )
       }
 
       ${
         metric(
           'Released reports',
-          releases.length,
-          unread
-            ? `${unread} unread`
-            : 'All viewed'
+          employerReports(state.portalEmployer).length,
+          'Human reviewed'
+        )
+      }
+
+      ${
+        metric(
+          'Unread reports',
+          notices.length,
+          'Notifications'
+        )
+      }
+
+      ${
+        metric(
+          'Report type',
+          'Fraud screening',
+          'Screenshot activity review'
         )
       }
 
     </div>
 
-
     <div class="card panel">
-
-      <div class="panel-title">
-        My Team
-      </div>
-
 
       <table>
 
@@ -2117,709 +798,61 @@ function employerDashboard() {
 
           <tr>
             <th>Employee</th>
-            <th>Tracked</th>
-            <th>Schedule</th>
-            <th>Evidence</th>
-            <th>Latest released report</th>
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          ${
-            team.length
-
-              ? team.map(
-                  e => {
-
-                    const latest =
-                      employeeReleasedReports(
-                        e.id
-                      )[0];
-
-
-                    return `
-                      <tr>
-
-                        <td>
-
-                          <span
-                            class="row-link"
-                            data-open-id="${escapeHtml(e.id)}"
-                          >
-                            ${escapeHtml(e.name)}
-                          </span>
-
-                          <div class="small">
-                            ${escapeHtml(e.role||'Employee')}
-                          </div>
-
-                        </td>
-
-                        <td>
-                          ${hoursLabel(e.trackedHours)}
-                        </td>
-
-                        <td>
-                          ${percentLabel(employeeScheduleCoverage(e))}
-                        </td>
-
-                        <td>
-                          ${percentLabel(employeeEvidenceCoverage(e))}
-                        </td>
-
-                        <td>
-
-                          ${
-                            latest
-
-                              ? `
-                                ${escapeHtml(periodLabel(latest.period))}
-                                ·
-                                v${latest.version}
-
-                                <button
-                                  class="btn"
-                                  style="margin-left:8px"
-                                  data-view-release="${escapeHtml(latest.id)}"
-                                >
-                                  View
-                                </button>
-                                `
-
-                              : 'No released report'
-                          }
-
-                        </td>
-
-                      </tr>
-                    `;
-                  }
-                ).join('')
-
-              : `
-                <tr>
-
-                  <td colspan="5">
-                    No employees mapped to this employer.
-                  </td>
-
-                </tr>
-                `
-          }
-
-        </tbody>
-
-      </table>
-
-    </div>
-    `,
-    'Employer Portal'
-  );
-}
-
-
-/* ==========================================================
-   EMPLOYEE DASHBOARD
-   ========================================================== */
-
-function employeeDashboard() {
-
-  const e =
-    employee();
-
-
-  if(
-    !e
-  ) {
-
-    return shell(
-      `
-      <div class="card empty">
-        No employee selected.
-      </div>
-      `,
-      'Employee Portal'
-    );
-  }
-
-
-  const latest =
-    employeeReleasedReports(
-      e.id
-    )[0];
-
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          My Activity
-        </h2>
-
-        <p>
-
-          ${escapeHtml(e.name)}
-
-          ·
-
-          ${escapeHtml(e.employer||'Employer')}
-
-        </p>
-
-      </div>
-
-
-      <span class="status green">
-
-        <span class="dot"></span>
-
-        Tracking connected
-
-      </span>
-
-    </div>
-
-
-    <div class="grid metrics">
-
-      ${
-        metric(
-          'Tracked this period',
-          hoursLabel(e.trackedHours),
-          'My recorded time'
-        )
-      }
-
-      ${
-        metric(
-          'Schedule coverage',
-          percentLabel(employeeScheduleCoverage(e)),
-          'Last analyzed period'
-        )
-      }
-
-      ${
-        metric(
-          'Evidence coverage',
-          percentLabel(employeeEvidenceCoverage(e)),
-          'Last analyzed period'
-        )
-      }
-
-      ${
-        metric(
-          'Latest report',
-          latest
-            ? periodLabel(latest.period)
-            : 'None',
-          latest
-            ? 'Released by White Glove'
-            : 'No released report'
-        )
-      }
-
-    </div>
-
-
-    <div class="grid two-col">
-
-      <div class="card panel">
-
-        <div class="panel-title">
-          My work profile
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Expected schedule
-          </h4>
-
-          <p>
-            ${escapeHtml(e.schedule||'Not set')}
-          </p>
-
-          <p>
-            ${escapeHtml(e.timezone||'Timezone not set')}
-          </p>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Monthly context
-          </h4>
-
-          <p>
-            ${escapeHtml(e.context||'No context entered.')}
-          </p>
-
-        </div>
-
-      </div>
-
-
-      <div class="card panel">
-
-        <div class="panel-title">
-          Reports
-        </div>
-
-
-        ${
-          latest
-
-            ? `
-              <p>
-                Your latest White Glove-reviewed report is available.
-              </p>
-
-              <button
-                class="btn primary"
-                data-view-release="${escapeHtml(latest.id)}"
-              >
-                View
-                ${escapeHtml(periodLabel(latest.period))}
-                Report
-              </button>
-              `
-
-            : `
-              <div class="empty">
-                No released report is available yet.
-              </div>
-              `
-        }
-
-      </div>
-
-    </div>
-    `,
-    'Employee Portal'
-  );
-}
-
-
-/* ==========================================================
-   REVIEWER DASHBOARD
-   ========================================================== */
-
-function reviewerDashboard() {
-
-  const emps =
-    activeEmployees();
-
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          Reviewer Workspace
-        </h2>
-
-        <p>
-
-          Every employer-facing report
-          must be reviewed and approved
-          before release.
-
-        </p>
-
-      </div>
-
-
-      <button
-        class="btn primary"
-        data-page="review"
-      >
-        Open review queue
-      </button>
-
-    </div>
-
-
-    <div class="grid metrics">
-
-      ${
-        metric(
-          'Employees',
-          emps.length,
-          'Authorized population'
-        )
-      }
-
-      ${
-        metric(
-          'Green',
-          emps.filter(
-            e =>
-              employeeReviewState(e)
-              ===
-              'Green'
-          ).length,
-          'Standard review'
-        )
-      }
-
-      ${
-        metric(
-          'Needs context',
-          emps.filter(
-            e =>
-              employeeReviewState(e)
-              !==
-              'Green'
-          ).length,
-          'Individual review'
-        )
-      }
-
-      ${
-        metric(
-          'Released reports',
-          state.releasedReports.length,
-          'Versioned snapshots'
-        )
-      }
-
-    </div>
-
-
-    <div class="card panel">
-
-      <div class="panel-title">
-        Queue
-      </div>
-
-      ${reviewQueueTable()}
-
-    </div>
-    `,
-    'Reviewer Home'
-  );
-}
-
-
-/* ==========================================================
-   COMPANIES / EMPLOYEES
-   ========================================================== */
-
-function companies() {
-
-  const groups =
-    {};
-
-
-  activeEmployees().forEach(
-    e => {
-
-      const key =
-        e.employer
-        ||
-        'Unassigned';
-
-
-      (
-        groups[key]
-        ||=
-        []
-      )
-      .push(e);
-    }
-  );
-
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          Companies
-        </h2>
-
-        <p>
-          Employer mapping is the portal isolation boundary.
-        </p>
-
-      </div>
-
-
-      <button
-        class="btn primary"
-        data-page="settings"
-      >
-        Manage mappings
-      </button>
-
-    </div>
-
-
-    <div class="card panel">
-
-      <table>
-
-        <thead>
-
-          <tr>
-            <th>WGM employer</th>
-            <th>Employees</th>
-            <th>Connections</th>
-            <th>Released reports</th>
-            <th>Status</th>
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          ${
-            Object.entries(groups)
-              .map(
-                ([name, emps]) => `
-                <tr>
-
-                  <td>
-                    ${escapeHtml(name)}
-                  </td>
-
-                  <td>
-                    ${emps.length}
-                  </td>
-
-                  <td>
-
-                    ${
-                      new Set(
-                        emps.map(
-                          e =>
-                            e.connectionId
-                            ||
-                            'legacy'
-                        )
-                      ).size
-                    }
-
-                  </td>
-
-                  <td>
-                    ${employerReleasedReports(name).length}
-                  </td>
-
-                  <td>
-
-                    <span
-                      class="status ${
-                        name === 'Unassigned'
-                          ? 'amber'
-                          : 'green'
-                      }"
-                    >
-
-                      <span class="dot"></span>
-
-                      ${
-                        name === 'Unassigned'
-                          ? 'Mapping required'
-                          : 'Active'
-                      }
-
-                    </span>
-
-                  </td>
-
-                </tr>
-                `
-              )
-              .join('')
-          }
-
-        </tbody>
-
-      </table>
-
-    </div>
-    `,
-    'Companies'
-  );
-}
-
-
-function employees() {
-
-  const emps =
-    visibleEmployees();
-
-
-  const title =
-    state.role === 'employer'
-      ? 'My Team'
-      : 'Employees';
-
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          ${title}
-        </h2>
-
-        <p>
-
-          ${
-            state.role === 'employer'
-
-              ? 'Only employees mapped to your organization are shown.'
-
-              : 'Open an employee to manage baseline, context, monitoring, or reports.'
-          }
-
-        </p>
-
-      </div>
-
-
-      ${
-        state.role === 'owner'
-
-          ? `
-            <div class="actions">
-
-              <button
-                class="btn"
-                id="syncScrin"
-              >
-                Sync all Scrin connections
-              </button>
-
-              <button
-                class="btn"
-                data-page="settings"
-              >
-                Map employers
-              </button>
-
-            </div>
-            `
-
-          : ''
-      }
-
-    </div>
-
-
-    <div class="card panel">
-
-      ${
-        state.role === 'owner'
-
-          ? `
-            <div class="callout">
-
-              <strong>
-                Current connection status
-              </strong>
-
-              ${escapeHtml(state.syncMessage)}
-
-            </div>
-            `
-
-          : ''
-      }
-
-
-      <table>
-
-        <thead>
-
-          <tr>
-            <th>Employee</th>
-            <th>Employer</th>
-            <th>Connection</th>
-            <th>Schedule</th>
-            <th>Evidence</th>
             <th>Latest report</th>
+            <th>Status</th>
+            <th></th>
           </tr>
 
         </thead>
 
-
         <tbody>
 
           ${
-            emps.map(
-              e => {
-
-                const latest =
-                  employeeReleasedReports(
-                    e.id
-                  )[0];
-
+            team.map(
+              e=>{
+                const r=employeeReports(e.id)[0];
 
                 return `
                   <tr>
 
-                    <td>
-
-                      <span
-                        class="row-link"
-                        data-open-id="${escapeHtml(e.id)}"
-                      >
-                        ${escapeHtml(e.name)}
-                      </span>
-
-                      <div class="small">
-                        ${escapeHtml(e.role||'Virtual Assistant')}
-                      </div>
-
-                    </td>
+                    <td>${esc(e.name)}</td>
 
                     <td>
-                      ${escapeHtml(e.employer||'Unassigned')}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(e.connectionName||'Scrin')}
-                    </td>
-
-                    <td>
-                      ${percentLabel(employeeScheduleCoverage(e))}
-                    </td>
-
-                    <td>
-                      ${percentLabel(employeeEvidenceCoverage(e))}
+                      ${
+                        r
+                          ?`${esc(month(r.period.from))} · v${r.version}`
+                          :'No released report'
+                      }
                     </td>
 
                     <td>
 
                       ${
-                        latest
+                        r
+                          ?`
+                            <span class="status green">
+                              <span class="dot"></span>
+                              Released
+                            </span>
+                          `
+                          :'—'
+                      }
 
-                          ? `
-                            ${escapeHtml(periodLabel(latest.period))}
-                            ·
-                            v${latest.version}
-                            `
+                    </td>
 
-                          : '—'
+                    <td>
+
+                      ${
+                        r
+                          ?`
+                            <button
+                              class="btn"
+                              data-view-release="${esc(r.id)}"
+                            >
+                              View
+                            </button>
+                          `
+                          :''
                       }
 
                     </td>
@@ -2836,97 +869,313 @@ function employees() {
 
     </div>
     `,
-    title
+    'Employer Portal'
   );
 }
 
+function reviewerDashboard(){
+  return shell(
+    `
+    <div class="header-row">
 
-/* ==========================================================
-   EMPLOYEE MONITORING
-   ========================================================== */
+      <div>
 
-function monitoring() {
+        <h2>Reviewer Workspace</h2>
 
-  return employeeView();
+        <p>
+          The gold HUMAN REVIEWED stamp
+          is applied only after sign-off.
+        </p>
+
+      </div>
+
+      <button
+        class="btn primary"
+        data-page="review"
+      >
+        Open review
+      </button>
+
+    </div>
+
+    <div class="grid metrics">
+
+      ${
+        metric(
+          'Employees',
+          active().length,
+          'Authorized'
+        )
+      }
+
+      ${
+        metric(
+          'Current status',
+          state.reportStatus,
+          'Screening'
+        )
+      }
+
+      ${
+        metric(
+          'Released',
+          state.released.length,
+          'Signed off'
+        )
+      }
+
+      ${
+        metric(
+          'Reviewer',
+          esc(state.reviewerName),
+          'Sign-off name'
+        )
+      }
+
+    </div>
+
+    ${
+      state.report
+        ?`
+          <div class="card panel">
+            ${reviewSummary()}
+          </div>
+        `
+        :`
+          <div class="card empty">
+            Generate a screening report first.
+          </div>
+        `
+    }
+    `,
+    'Reviewer Home'
+  );
 }
 
+function employeeDashboard(){
+  const e=currentEmployee();
+  const r=e?employeeReports(e.id)[0]:null;
 
-function employeeView() {
+  return shell(
+    e
+      ?`
+        <div class="header-row">
 
-  const e =
-    employee();
+          <div>
 
+            <h2>My Activity</h2>
 
-  if(
-    !e
-  ) {
+            <p>
+              ${esc(e.name)}
+              ·
+              ${esc(e.employer||'')}
+            </p>
 
+          </div>
+
+        </div>
+
+        <div class="grid metrics">
+
+          ${
+            metric(
+              'Latest report',
+              r?month(r.period.from):'None',
+              r
+                ?'Released by White Glove'
+                :'No report'
+            )
+          }
+
+          ${
+            metric(
+              'Connection',
+              esc(e.connectionName||'Scrin'),
+              'Monitoring source'
+            )
+          }
+
+          ${
+            metric(
+              'Timezone',
+              esc(timezone(e)),
+              'Report context'
+            )
+          }
+
+          ${
+            metric(
+              'Report type',
+              'Fraud screening',
+              'Screenshot activity review'
+            )
+          }
+
+        </div>
+
+        ${
+          r
+            ?`
+              <button
+                class="btn primary"
+                data-view-release="${esc(r.id)}"
+              >
+                View latest report
+              </button>
+            `
+            :`
+              <div class="card empty">
+                No released report yet.
+              </div>
+            `
+        }
+      `
+      :`
+        <div class="card empty">
+          No employee selected.
+        </div>
+      `,
+    'Employee Portal'
+  );
+}
+
+function employees(){
+  const list=
+    state.role==='employer'
+      ?portal()
+      :state.role==='employee'
+        ?[currentEmployee()].filter(Boolean)
+        :active();
+
+  return shell(
+    `
+    <div class="header-row">
+
+      <div>
+
+        <h2>
+          ${
+            state.role==='employer'
+              ?'My Team'
+              :'Employees'
+          }
+        </h2>
+
+        <p>
+          Open an employee to inspect evidence.
+        </p>
+
+      </div>
+
+      ${
+        state.role==='owner'
+          ?`
+            <button
+              class="btn"
+              id="syncScrin"
+            >
+              Sync Scrin
+            </button>
+          `
+          :''
+      }
+
+    </div>
+
+    <div class="card panel">
+
+      ${
+        state.role==='owner'
+          ?`
+            <div class="callout">
+              <strong>Connection status</strong>
+              ${esc(state.syncMessage)}
+            </div>
+          `
+          :''
+      }
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>Employee</th>
+            <th>Employer</th>
+            <th>Connection</th>
+            <th>Latest screening</th>
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          ${
+            list.map(
+              e=>{
+                const r=employeeReports(e.id)[0];
+
+                return `
+                  <tr>
+
+                    <td>
+
+                      <span
+                        class="row-link"
+                        data-open-id="${esc(e.id)}"
+                      >
+                        ${esc(e.name)}
+                      </span>
+
+                    </td>
+
+                    <td>
+                      ${esc(e.employer||'Unassigned')}
+                    </td>
+
+                    <td>
+                      ${esc(e.connectionName||'Scrin')}
+                    </td>
+
+                    <td>
+                      ${
+                        r
+                          ?`${esc(month(r.period.from))} · Released`
+                          :'—'
+                      }
+                    </td>
+
+                  </tr>
+                `;
+              }
+            ).join('')
+          }
+
+        </tbody>
+
+      </table>
+
+    </div>
+    `,
+    state.role==='employer'
+      ?'My Team'
+      :'Employees'
+  );
+}
+
+function monitoring(){
+  const e=currentEmployee();
+
+  if(!e){
     return shell(
       `
       <div class="card empty">
-        No employee is available in this portal.
+        No employee selected.
       </div>
       `,
-      'Employee Monitoring'
+      'Monitoring'
     );
   }
-
-
-  const tabs = [
-    'overview',
-    'baseline',
-    'timeline',
-    'screenshots',
-    'workstreams',
-    'apps',
-    'policy'
-  ];
-
-
-  if(
-    state.role !== 'employee'
-  ) {
-
-    tabs.push(
-      'context'
-    );
-  }
-
-
-  tabs.push(
-    'reports'
-  );
-
-
-  const labels = {
-    overview:
-      'Overview',
-
-    baseline:
-      'VA Baseline',
-
-    timeline:
-      'Timeline',
-
-    screenshots:
-      'Screenshots',
-
-    workstreams:
-      'Workstreams',
-
-    apps:
-      'Apps & URLs',
-
-    policy:
-      'Monitoring Settings',
-
-    context:
-      'Monthly Context',
-
-    reports:
-      'Reports'
-  };
-
 
   return shell(
     `
@@ -2935,90 +1184,43 @@ function employeeView() {
       <div class="employee-head">
 
         <div class="employee-avatar">
-
-          ${escapeHtml(
-            e.initials
-            ||
-            initials(e.name)
-          )}
-
+          ${esc(e.initials||ini(e.name))}
         </div>
-
 
         <div>
 
           <h2 style="margin:0">
-            ${escapeHtml(e.name)}
+            ${esc(e.name)}
           </h2>
 
           <div class="small">
-
-            ${escapeHtml(e.employer||'Unassigned employer')}
-
+            ${esc(e.employer||'Unassigned')}
             ·
-
-            ${escapeHtml(e.role||'Virtual Assistant')}
-
-            ·
-
-            ${escapeHtml(e.connectionName||'Scrin')}
-
+            ${esc(e.connectionName||'Scrin')}
           </div>
 
         </div>
 
-
-        <div class="spacer"></div>
-
-
-        <span class="status green">
-
-          <span class="dot"></span>
-
-          Tracking connected
-
-        </span>
-
       </div>
-
 
       <div class="tabs">
 
         ${
-          tabs.map(
-            t => `
-            <button
-              class="tab ${
-                state.employeeTab === t
-                  ? 'active'
-                  : ''
-              }"
-              data-tab="${t}"
-            >
-              ${labels[t]}
-            </button>
+          ['overview','screenshots','reports'].map(
+            t=>`
+              <button
+                class="tab ${state.tab===t?'active':''}"
+                data-tab="${t}"
+              >
+                ${t[0].toUpperCase()+t.slice(1)}
+              </button>
             `
           ).join('')
         }
 
       </div>
 
-
-      ${
-        state.employeeTab === 'baseline'
-
-          ? baselineView(e)
-
-          : state.employeeTab === 'policy'
-
-            ? monitoringPolicyView(e)
-
-            : state.employeeTab === 'context'
-
-              ? monthlyContextView(e)
-
-              : employeeTabContent(e)
-      }
+      ${monitorTab(e)}
 
     </div>
     `,
@@ -3026,344 +1228,24 @@ function employeeView() {
   );
 }
 
-
-/* ==========================================================
-   EMPLOYEE TAB CONTENT
-   ========================================================== */
-
-function employeeTabContent(
-  e
-) {
-
-  if(
-    state.employeeTab === 'screenshots'
-  ) {
-
+function monitorTab(e){
+  if(state.tab==='screenshots'){
     return screenshotView(e);
   }
 
+  if(state.tab==='reports'){
+    const rs=employeeReports(e.id);
 
-  if(
-    state.employeeTab === 'workstreams'
-  ) {
-
-    return `
-      <div class="grid two-col">
-
-        <div>
-
-          ${
-            (e.workstreams || [])
-              .map(
-                x =>
-                  mixBar(
-                    x[0],
-                    x[1]
-                  )
-              )
-              .join('')
-
-            ||
-
-            `
-            <div class="empty">
-
-              Generate a report period
-              to populate directional work categories.
-
-            </div>
-            `
-          }
-
-        </div>
-
-
-        <div class="callout">
-
-          <strong>
-            Reporting rule
-          </strong>
-
-          Categories combine project,
-          note
-          and application evidence.
-
-          They are directional —
-          not exact task-duration allocation.
-
-        </div>
-
-      </div>
-    `;
-  }
-
-
-  if(
-    state.employeeTab === 'apps'
-  ) {
-
-    return `
-      <div class="grid two-col">
-
-        <div>
-
-          ${
-            (e.apps || [])
-              .map(
-                x =>
-                  mixBar(
-                    x[0],
-                    x[1]
-                  )
-              )
-              .join('')
-
-            ||
-
-            `
-            <div class="empty">
-              Generate or sync evidence to populate applications.
-            </div>
-            `
-          }
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            How WGM uses this
-          </h4>
-
-          <p>
-
-            Applications help establish
-            business relevance
-            and repeated work patterns.
-
-            Activity level
-            or app switching
-            is not a standalone performance score.
-
-          </p>
-
-        </div>
-
-      </div>
-    `;
-  }
-
-
-  if(
-    state.employeeTab === 'reports'
-  ) {
-
-    const releases =
-      employeeReleasedReports(
-        e.id
-      );
-
-
-    return releases.length
-
-      ? `
-        <table>
-
-          <thead>
-
-            <tr>
-              <th>Period</th>
-              <th>Version</th>
-              <th>Released</th>
-              <th>Reviewer</th>
-              <th></th>
-            </tr>
-
-          </thead>
-
-
-          <tbody>
-
-            ${
-              releases.map(
-                r => `
-                <tr>
-
-                  <td>
-                    ${escapeHtml(periodLabel(r.period))}
-                  </td>
-
-                  <td>
-                    v${r.version}
-                  </td>
-
-                  <td>
-                    ${new Date(r.releasedAt).toLocaleString()}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(r.reviewer||'White Glove Reviewer')}
-                  </td>
-
-                  <td>
-
-                    <button
-                      class="btn"
-                      data-view-release="${escapeHtml(r.id)}"
-                    >
-                      View
-                    </button>
-
-                  </td>
-
-                </tr>
-                `
-              ).join('')
-            }
-
-          </tbody>
-
-        </table>
-        `
-
-      : `
+    return rs.length
+      ?releaseTable(rs)
+      :`
         <div class="empty">
-          No released reports are available for this employee.
+          No released reports.
         </div>
-        `;
+      `;
   }
 
-
-  if(
-    state.employeeTab === 'timeline'
-  ) {
-
-    const s =
-      e.daySummary;
-
-
-    return s
-
-      ? `
-        <div class="grid metrics">
-
-          ${
-            metric(
-              'First tracked',
-              escapeHtml(s.firstTracked||'—'),
-              'Selected day'
-            )
-          }
-
-          ${
-            metric(
-              'Last tracked',
-              escapeHtml(s.lastTracked||'—'),
-              'Selected day'
-            )
-          }
-
-          ${
-            metric(
-              'Recorded time',
-              hoursLabel(
-                Number(
-                  s.trackedSeconds
-                  ||
-                  0
-                )
-                /
-                3600
-              ),
-              'Union of tracked intervals'
-            )
-          }
-
-          ${
-            metric(
-              'Screenshots',
-              Number(
-                s.screenshotCount
-                ||
-                0
-              ),
-              'Available evidence captures'
-            )
-          }
-
-        </div>
-
-
-        <div class="card panel">
-
-          <div class="panel-title">
-            Tracked sessions
-          </div>
-
-          ${
-            (s.sessions || [])
-              .map(
-                x => `
-                <div class="context-box">
-
-                  <h4>
-                    ${escapeHtml(x.from)}
-                    –
-                    ${escapeHtml(x.to)}
-                  </h4>
-
-                  <p>
-                    ${
-                      hoursLabel(
-                        Number(
-                          x.seconds
-                          ||
-                          0
-                        )
-                        /
-                        3600
-                      )
-                    }
-                    tracked
-                  </p>
-
-                </div>
-                `
-              )
-              .join('')
-
-            ||
-
-            `
-            <div class="empty">
-              No sessions loaded.
-            </div>
-            `
-          }
-
-        </div>
-        `
-
-      : `
-        <div class="callout">
-
-          <strong>
-            No day loaded yet
-          </strong>
-
-          Open Screenshots,
-          choose a date
-          and load the complete day from Scrin.
-
-        </div>
-        `;
-  }
-
-
-  const a =
-    latestAnalytics(e);
-
+  const a=e.lastAnalytics;
 
   return `
     <div class="grid metrics">
@@ -3371,1453 +1253,121 @@ function employeeTabContent(
       ${
         metric(
           'Tracked time',
-          hoursLabel(e.trackedHours),
+          a?hrs(a.metrics?.trackedHours||0):'—',
           'Last analyzed period'
         )
       }
 
       ${
         metric(
-          'Schedule coverage',
-          percentLabel(employeeScheduleCoverage(e)),
-          'Adjusted monthly expectation'
+          'Screenshots',
+          a?.evidence?.screenshotCount??'—',
+          'Monthly metadata'
         )
       }
 
       ${
         metric(
-          'Evidence coverage',
-          percentLabel(employeeEvidenceCoverage(e)),
-          'Tracked segments with screenshot evidence'
+          'Capture dates',
+          a?.screenshotDates?.length??'—',
+          'Month'
         )
       }
 
       ${
         metric(
-          'Review state',
-          a?.review?.status
-          ||
-          '—',
-          a?.review?.reasons?.length
-            ? `${a.review.reasons.length} reason(s)`
-            : 'Human review still required'
+          'Evidence status',
+          a?.review?.status||'—',
+          'Coverage'
         )
       }
 
     </div>
 
-
-    <div class="grid two-col">
-
-      <div>
-
-        <div class="panel-title">
-          Weekly analytics
-        </div>
-
-        ${
-          a?.weeks?.length
-
-            ? a.weeks.map(
-                w => `
-                <div class="context-box">
-
-                  <h4>
-
-                    ${escapeHtml(w.label)}
-
-                    ·
-
-                    ${hoursLabel(w.trackedHours)}
-
-                  </h4>
-
-                  <p>
-
-                    Evidence
-                    ${percentLabel(w.evidenceCoveragePercent)}
-
-                    ·
-
-                    ${w.screenshotCount}
-                    screenshots
-
-                    ${
-                      w.categories?.[0]?.name
-
-                        ? `
-                          ·
-                          Leading category:
-                          ${escapeHtml(w.categories[0].name)}
-                          `
-
-                        : ''
-                    }
-
-                  </p>
-
-                </div>
-                `
-              ).join('')
-
-            : `
-              <div class="empty">
-                Generate a report to calculate weekly analytics.
-              </div>
-              `
-        }
-
-      </div>
-
-
-      <div>
-
-        <div class="panel-title">
-          Reporting context
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Baseline
-          </h4>
-
-          <p>
-            ${escapeHtml(
-              e.baseline?.generalSchedule
-              ||
-              e.schedule
-              ||
-              'Not set'
-            )}
-          </p>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Evidence disclosure
-          </h4>
-
-          <p>
-            ${escapeHtml(
-              a?.analysisDisclosure?.note
-              ||
-              'Generate a report to populate evidence disclosure.'
-            )}
-          </p>
-
-        </div>
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-/* ==========================================================
-   PERMANENT VA BASELINE
-   ========================================================== */
-
-function baselineView(
-  e
-) {
-
-  const b =
-    e.baseline
-    ||
-    {};
-
-
-  const canEdit =
-    state.role
-    !==
-    'employee';
-
-
-  const disabled =
-    canEdit
-      ? ''
-      : 'disabled';
-
-
-  return `
-    <div class="grid two-col">
-
-      <div>
-
-        <div class="panel-title">
-          Permanent VA / Client Baseline
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Client / company
-          </label>
-
-          <input
-            id="baseClientCompany"
-            value="${escapeHtml(b.clientCompany||e.employer||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Primary client contact
-          </label>
-
-          <input
-            id="basePrimaryContact"
-            value="${escapeHtml(b.primaryContact||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            VA start date
-          </label>
-
-          <input
-            id="baseStartDate"
-            type="date"
-            value="${escapeHtml(b.startDate||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            General role
-          </label>
-
-          <input
-            id="baseGeneralRole"
-            value="${escapeHtml(b.generalRole||e.role||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Employment type
-          </label>
-
-          <select
-            id="baseEmploymentType"
-            ${disabled}
-          >
-
-            <option
-              ${
-                b.employmentType === 'Full-time'
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Full-time
-            </option>
-
-            <option
-              ${
-                b.employmentType === 'Part-time'
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Part-time
-            </option>
-
-            <option
-              ${
-                b.employmentType === 'Flexible'
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Flexible
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Expected hours / week
-          </label>
-
-          <input
-            id="baseHoursWeek"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(b.expectedHoursPerWeek||40)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Expected hours / day
-          </label>
-
-          <input
-            id="baseHoursDay"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(b.expectedHoursPerDay||8)}"
-            ${disabled}
-          >
-
-        </div>
-
-      </div>
-
-
-      <div>
-
-        <div class="panel-title">
-          Schedule & Work Context
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Normal working days
-          </label>
-
-          <input
-            id="baseWorkingDays"
-            value="${escapeHtml(b.normalWorkingDays||'Monday–Friday')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Time zone
-          </label>
-
-          <input
-            id="baseTimezone"
-            value="${escapeHtml(b.timezone||e.timezone||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            General schedule
-          </label>
-
-          <input
-            id="baseSchedule"
-            value="${escapeHtml(b.generalSchedule||e.schedule||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Schedule flexibility
-          </label>
-
-          <input
-            id="baseFlexibility"
-            value="${escapeHtml(b.scheduleFlexibility||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Core availability hours
-          </label>
-
-          <input
-            id="baseCoreAvailability"
-            value="${escapeHtml(b.coreAvailability||'')}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Common applications
-          </label>
-
-          <textarea
-            id="baseApps"
-            ${disabled}
-          >${escapeHtml(b.commonApplications||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Known off-computer work
-          </label>
-
-          <textarea
-            id="baseOffComputer"
-            ${disabled}
-          >${escapeHtml(b.knownOffComputerWork||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Recurring meetings
-          </label>
-
-          <textarea
-            id="baseMeetings"
-            ${disabled}
-          >${escapeHtml(b.recurringMeetings||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Broad workstream categories
-          </label>
-
-          <textarea
-            id="baseWorkstreams"
-            ${disabled}
-          >${escapeHtml(b.broadWorkstreams||'')}</textarea>
-
-        </div>
-
-
-        ${
-          canEdit
-
-            ? `
-              <button
-                class="btn gold"
-                id="saveBaseline"
-              >
-                Save Baseline
-              </button>
-              `
-
-            : `
-              <div class="small">
-                This baseline is read-only from the employee role.
-              </div>
-              `
-        }
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function saveBaseline() {
-
-  const e =
-    employee();
-
-
-  if(
-    !e
-    ||
-    state.role === 'employee'
-  ) {
-
-    return;
-  }
-
-
-  e.baseline = {
-    clientCompany:
-      document
-        .getElementById('baseClientCompany')
-        ?.value
-        .trim()
-      ||
-      e.employer
-      ||
-      '',
-
-    primaryContact:
-      document
-        .getElementById('basePrimaryContact')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    startDate:
-      document
-        .getElementById('baseStartDate')
-        ?.value
-      ||
-      '',
-
-    generalRole:
-      document
-        .getElementById('baseGeneralRole')
-        ?.value
-        .trim()
-      ||
-      e.role
-      ||
-      'Virtual Assistant',
-
-    employmentType:
-      document
-        .getElementById('baseEmploymentType')
-        ?.value
-      ||
-      'Full-time',
-
-    expectedHoursPerWeek:
-      Number(
-        document
-          .getElementById('baseHoursWeek')
-          ?.value
-        ||
-        0
-      ),
-
-    expectedHoursPerDay:
-      Number(
-        document
-          .getElementById('baseHoursDay')
-          ?.value
-        ||
-        0
-      ),
-
-    normalWorkingDays:
-      document
-        .getElementById('baseWorkingDays')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    timezone:
-      document
-        .getElementById('baseTimezone')
-        ?.value
-        .trim()
-      ||
-      e.timezone
-      ||
-      '',
-
-    generalSchedule:
-      document
-        .getElementById('baseSchedule')
-        ?.value
-        .trim()
-      ||
-      e.schedule
-      ||
-      '',
-
-    scheduleFlexibility:
-      document
-        .getElementById('baseFlexibility')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    coreAvailability:
-      document
-        .getElementById('baseCoreAvailability')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    commonApplications:
-      document
-        .getElementById('baseApps')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    knownOffComputerWork:
-      document
-        .getElementById('baseOffComputer')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    recurringMeetings:
-      document
-        .getElementById('baseMeetings')
-        ?.value
-        .trim()
-      ||
-      '',
-
-    broadWorkstreams:
-      document
-        .getElementById('baseWorkstreams')
-        ?.value
-        .trim()
-      ||
-      ''
-  };
-
-
-  e.role =
-    e.baseline.generalRole
-    ||
-    e.role;
-
-
-  e.timezone =
-    e.baseline.timezone
-    ||
-    e.timezone;
-
-
-  e.schedule =
-    e.baseline.generalSchedule
-    ||
-    e.schedule;
-
-
-  saveEmployees();
-
-
-  toast(
-    'Permanent VA baseline saved.'
-  );
-}
-
-
-/* ==========================================================
-   MONTHLY REPORT CONTEXT
-   ========================================================== */
-
-function getMonthlyContext(
-  e,
-  key = monthKeyFromDate(
-    state.reportPeriod.from
-  )
-) {
-
-  ensureEmployeeShape(e);
-
-
-  if(
-    !e.monthlyContexts[key]
-  ) {
-
-    e.monthlyContexts[key] = {
-      month:
-        key,
-
-      expectedWorkingDays:
-        20,
-
-      expectedMonthlyHours:
-        Number(
-          e.expectedHours
-          ||
-          160
-        ),
-
-      approvedPTOHours:
-        0,
-
-      sickLeaveHours:
-        0,
-
-      holidayHours:
-        0,
-
-      clientApprovedHoursOff:
-        0,
-
-      approvedReductionHours:
-        0,
-
-      additionalRequiredHours:
-        0,
-
-      materialBusinessContext:
-        '',
-
-      employerNotes:
-        '',
-
-      employeeNotes:
-        '',
-
-      whiteGloveSupportActivity:
-        ''
-    };
-  }
-
-
-  return e.monthlyContexts[key];
-}
-
-
-function adjustedExpectedHours(
-  ctx
-) {
-
-  const base =
-    Number(
-      ctx.expectedMonthlyHours
-      ||
-      0
-    );
-
-
-  const reductions =
-    Number(
-      ctx.approvedPTOHours
-      ||
-      0
-    )
-    +
-    Number(
-      ctx.sickLeaveHours
-      ||
-      0
-    )
-    +
-    Number(
-      ctx.holidayHours
-      ||
-      0
-    )
-    +
-    Number(
-      ctx.clientApprovedHoursOff
-      ||
-      0
-    )
-    +
-    Number(
-      ctx.approvedReductionHours
-      ||
-      0
-    );
-
-
-  const additions =
-    Number(
-      ctx.additionalRequiredHours
-      ||
-      0
-    );
-
-
-  return Math.max(
-    0,
-    base
-    -
-    reductions
-    +
-    additions
-  );
-}
-
-
-function monthlyContextFields(
-  e,
-  compact = false
-) {
-
-  const key =
-    monthKeyFromDate(
-      state.reportPeriod.from
-    );
-
-
-  const c =
-    getMonthlyContext(
-      e,
-      key
-    );
-
-
-  const canEdit =
-    state.role
-    !==
-    'employee';
-
-
-  const disabled =
-    canEdit
-      ? ''
-      : 'disabled';
-
-
-  return `
-    <div class="${compact ? '' : 'grid two-col'}">
-
-      <div>
-
-        <div class="panel-title">
-          ${escapeHtml(monthLabel(state.reportPeriod.from))}
-          Schedule Context
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Expected working days
-          </label>
-
-          <input
-            id="ctxWorkingDays"
-            type="number"
-            min="0"
-            step="1"
-            value="${Number(c.expectedWorkingDays||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Base expected monthly hours
-          </label>
-
-          <input
-            id="ctxExpectedHours"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.expectedMonthlyHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Approved PTO hours
-          </label>
-
-          <input
-            id="ctxPTO"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.approvedPTOHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Sick leave hours
-          </label>
-
-          <input
-            id="ctxSick"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.sickLeaveHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Public holiday hours
-          </label>
-
-          <input
-            id="ctxHoliday"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.holidayHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Client-approved hours off
-          </label>
-
-          <input
-            id="ctxClientOff"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.clientApprovedHoursOff||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Other approved hour reduction
-          </label>
-
-          <input
-            id="ctxReduction"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.approvedReductionHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Additional required / adjusted hours
-          </label>
-
-          <input
-            id="ctxAdditional"
-            type="number"
-            min="0"
-            step="0.5"
-            value="${Number(c.additionalRequiredHours||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Adjusted expected hours
-          </h4>
-
-          <p
-            id="adjustedExpectedDisplay"
-          >
-            ${hoursLabel(adjustedExpectedHours(c))}
-          </p>
-
-        </div>
-
-      </div>
-
-
-      <div>
-
-        <div class="panel-title">
-          Business & White Glove Context
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Material business context
-          </label>
-
-          <textarea
-            id="ctxBusiness"
-            ${disabled}
-          >${escapeHtml(c.materialBusinessContext||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Employer notes
-          </label>
-
-          <textarea
-            id="ctxEmployerNotes"
-            ${disabled}
-          >${escapeHtml(c.employerNotes||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Employee notes / clarification
-          </label>
-
-          <textarea
-            id="ctxEmployeeNotes"
-            ${disabled}
-          >${escapeHtml(c.employeeNotes||'')}</textarea>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            White Glove support / coaching activity this month
-          </label>
-
-          <textarea
-            id="ctxSupport"
-            ${disabled}
-          >${escapeHtml(c.whiteGloveSupportActivity||'')}</textarea>
-
-        </div>
-
-
-        ${
-          canEdit
-
-            ? `
-              <button
-                class="btn gold"
-                id="saveMonthlyContext"
-              >
-                Save Monthly Context
-              </button>
-              `
-
-            : `
-              <div class="small">
-                Monthly context is read-only from the employee role.
-              </div>
-              `
-        }
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function monthlyContextView(
-  e
-) {
-
-  return `
     <div class="callout">
 
-      <strong>
-        Monthly context applies before WGM judges schedule coverage.
-      </strong>
+      <strong>Human review rule</strong>
 
-      Approved leave,
-      holidays,
-      client-approved time off
-      and approved schedule changes
-      reduce or adjust the monthly expectation
-      before report interpretation.
-
-    </div>
-
-
-    <div style="margin-top:16px">
-
-      ${monthlyContextFields(e)}
+      The report can be generated by AI,
+      but the HUMAN REVIEWED stamp appears only
+      after a reviewer checks the screenshot sample
+      and approves release.
 
     </div>
   `;
 }
 
+function shotCard(s){
+  return `
+    <div class="shot">
 
-function collectMonthlyContext(
-  e
-) {
+      <div class="shot-img">
 
-  const key =
-    monthKeyFromDate(
-      state.reportPeriod.from
-    );
+        ${
+          s[3]
+            ?`
+              <a
+                href="${esc(s[4]||s[3])}"
+                target="_blank"
+              >
+                <img
+                  src="${esc(s[3])}"
+                  style="
+                    width:100%;
+                    height:100%;
+                    object-fit:cover;
+                    display:block
+                  "
+                >
+              </a>
+            `
+            :`
+              <div class="empty">
+                No image
+              </div>
+            `
+        }
 
+      </div>
 
-  const existing =
-    getMonthlyContext(
-      e,
-      key
-    );
+      <div class="shot-meta">
 
+        <strong>${esc(s[0])}</strong>
 
-  const readNum =
-    (
-      id,
-      fallback
-    ) => {
+        ${esc(s[1])}
 
-      const el =
-        document.getElementById(id);
+        <br>
 
+        <span class="small">
+          Activity ${s[2]??'—'}%
+        </span>
 
-      return el
-        ? Number(
-            el.value
-            ||
-            0
-          )
-        : Number(
-            fallback
-            ||
-            0
-          );
-    };
+      </div>
 
-
-  const readText =
-    (
-      id,
-      fallback
-    ) => {
-
-      const el =
-        document.getElementById(id);
-
-
-      return el
-        ? el.value.trim()
-        : String(
-            fallback
-            ||
-            ''
-          );
-    };
-
-
-  const c = {
-    month:
-      key,
-
-    expectedWorkingDays:
-      readNum(
-        'ctxWorkingDays',
-        existing.expectedWorkingDays
-      ),
-
-    expectedMonthlyHours:
-      readNum(
-        'ctxExpectedHours',
-        existing.expectedMonthlyHours
-      ),
-
-    approvedPTOHours:
-      readNum(
-        'ctxPTO',
-        existing.approvedPTOHours
-      ),
-
-    sickLeaveHours:
-      readNum(
-        'ctxSick',
-        existing.sickLeaveHours
-      ),
-
-    holidayHours:
-      readNum(
-        'ctxHoliday',
-        existing.holidayHours
-      ),
-
-    clientApprovedHoursOff:
-      readNum(
-        'ctxClientOff',
-        existing.clientApprovedHoursOff
-      ),
-
-    approvedReductionHours:
-      readNum(
-        'ctxReduction',
-        existing.approvedReductionHours
-      ),
-
-    additionalRequiredHours:
-      readNum(
-        'ctxAdditional',
-        existing.additionalRequiredHours
-      ),
-
-    materialBusinessContext:
-      readText(
-        'ctxBusiness',
-        existing.materialBusinessContext
-      ),
-
-    employerNotes:
-      readText(
-        'ctxEmployerNotes',
-        existing.employerNotes
-      ),
-
-    employeeNotes:
-      readText(
-        'ctxEmployeeNotes',
-        existing.employeeNotes
-      ),
-
-    whiteGloveSupportActivity:
-      readText(
-        'ctxSupport',
-        existing.whiteGloveSupportActivity
-      )
-  };
-
-
-  c.adjustedExpectedHours =
-    adjustedExpectedHours(c);
-
-
-  e.monthlyContexts[key] =
-    c;
-
-
-  e.context =
-    [
-      c.materialBusinessContext,
-      c.employerNotes,
-      c.employeeNotes
-    ]
-    .filter(Boolean)
-    .join(' | ');
-
-
-  saveEmployees();
-
-
-  return c;
+    </div>
+  `;
 }
 
-
-function saveMonthlyContext() {
-
-  const e =
-    employee();
-
-
-  if(
-    !e
-    ||
-    state.role === 'employee'
-  ) {
-
-    return;
-  }
-
-
-  collectMonthlyContext(e);
-
-
-  toast(
-    'Monthly reporting context saved.'
-  );
-}
-
-
-function updateAdjustedExpectedDisplay() {
-
-  const fake = {
-    expectedMonthlyHours:
-      Number(
-        document
-          .getElementById('ctxExpectedHours')
-          ?.value
-        ||
-        0
-      ),
-
-    approvedPTOHours:
-      Number(
-        document
-          .getElementById('ctxPTO')
-          ?.value
-        ||
-        0
-      ),
-
-    sickLeaveHours:
-      Number(
-        document
-          .getElementById('ctxSick')
-          ?.value
-        ||
-        0
-      ),
-
-    holidayHours:
-      Number(
-        document
-          .getElementById('ctxHoliday')
-          ?.value
-        ||
-        0
-      ),
-
-    clientApprovedHoursOff:
-      Number(
-        document
-          .getElementById('ctxClientOff')
-          ?.value
-        ||
-        0
-      ),
-
-    approvedReductionHours:
-      Number(
-        document
-          .getElementById('ctxReduction')
-          ?.value
-        ||
-        0
-      ),
-
-    additionalRequiredHours:
-      Number(
-        document
-          .getElementById('ctxAdditional')
-          ?.value
-        ||
-        0
-      )
-  };
-
-
-  const el =
-    document.getElementById(
-      'adjustedExpectedDisplay'
-    );
-
-
-  if(
-    el
-  ) {
-
-    el.textContent =
-      hoursLabel(
-        adjustedExpectedHours(
-          fake
-        )
-      );
-  }
-}
-
-
-/* ==========================================================
-   SCREENSHOTS
-   ========================================================== */
-
-function screenshotView(
-  e
-) {
-
-  const s =
-    e.daySummary
-    ||
-    null;
-
-
-  const date =
-    s?.date
-    ||
-    state.reportPeriod.to
-    ||
-    '2026-09-18';
-
+function screenshotView(e){
+  const d=e.daySummary;
+  const date=d?.date||state.period.to;
 
   return `
     <div class="toolbar">
 
       <div class="field">
 
-        <label>
-          Date
-        </label>
+        <label>Date</label>
 
         <input
           id="screenDate"
           type="date"
-          value="${escapeHtml(date)}"
+          value="${esc(date)}"
         >
 
       </div>
 
-
       <div class="spacer"></div>
-
 
       <button
         class="btn primary"
@@ -4828,11 +1378,9 @@ function screenshotView(
 
     </div>
 
-
     ${
-      s
-
-        ? `
+      d
+        ?`
           <div
             class="grid metrics"
             style="margin:16px 0"
@@ -4841,1167 +1389,136 @@ function screenshotView(
             ${
               metric(
                 'First tracked',
-                escapeHtml(s.firstTracked||'—'),
-                'Start of recorded work'
+                esc(d.firstTracked||'—'),
+                'Selected day'
               )
             }
 
             ${
               metric(
                 'Last tracked',
-                escapeHtml(s.lastTracked||'—'),
-                'End of recorded work'
+                esc(d.lastTracked||'—'),
+                'Selected day'
               )
             }
 
             ${
               metric(
                 'Recorded time',
-                hoursLabel(
-                  Number(
-                    s.trackedSeconds
-                    ||
-                    0
-                  )
-                  /
-                  3600
+                hrs(
+                  Number(d.trackedSeconds||0)/3600
                 ),
-                'Overlapping intervals reconciled'
+                'Scrin intervals'
               )
             }
 
             ${
               metric(
                 'Screenshots',
-                Number(
-                  s.screenshotCount
-                  ||
-                  0
-                ),
-                'Evidence captures returned'
+                d.screenshotCount||0,
+                'Evidence captures'
               )
             }
 
           </div>
-
-
-          <div
-            class="context-box"
-            style="margin:0 0 16px"
-          >
-
-            <h4>
-              Tracked work sessions
-            </h4>
-
-            <p>
-
-              ${
-                (s.sessions || [])
-                  .map(
-                    x =>
-                      `${escapeHtml(x.from)}–${escapeHtml(x.to)} (${hoursLabel(Number(x.seconds||0)/3600)})`
-                  )
-                  .join(' · ')
-
-                ||
-
-                'No sessions returned.'
-              }
-
-            </p>
-
-          </div>
-          `
-
-        : `
-          <div
-            class="callout"
-            style="margin:16px 0"
-          >
-
-            <strong>
-              Workday summary
-            </strong>
-
-            Select a date
-            and load the complete day
-            to see timeframe,
-            sessions
-            and all available screenshots.
-
-          </div>
-          `
-    }
-
-
-    <div class="banner">
-
-      <div>
-
-        <div class="big">
-          Daily screenshot evidence
-        </div>
-
-        <div class="muted">
-
-          ${
-            s
-
-              ? `${s.screenshotCount} available capture(s) loaded for ${s.date}.`
-
-              : 'Load a workday to inspect screenshot evidence.'
-          }
-
-        </div>
-
-      </div>
-
-
-      <span class="status blue">
-
-        <span class="dot"></span>
-
-        ${escapeHtml(e.connectionName||'Scrin evidence')}
-
-      </span>
-
-    </div>
-
-
-    <div id="shotArea">
-
-      <div class="shot-grid">
-
-        ${
-          (e.shots || [])
-            .map(
-              x =>
-                shotCard(
-                  x[0],
-                  x[1],
-                  x[2],
-                  x[3],
-                  x[4]
-                )
-            )
-            .join('')
-
-          ||
-
-          `
-          <div class="empty">
-            No screenshot evidence loaded.
-          </div>
-          `
-        }
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function shotCard(
-  time,
-  app,
-  level,
-  thumbUrl,
-  fullUrl
-) {
-
-  const thumb =
-    thumbUrl
-      ? escapeHtml(thumbUrl)
-      : '';
-
-
-  const full =
-    fullUrl
-      ? escapeHtml(fullUrl)
-      : thumb;
-
-
-  const image =
-    thumb
-
-      ? `
-        <a
-          href="${full}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-
-          <img
-            src="${thumb}"
-            alt="Scrin screenshot at ${escapeHtml(time)}"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-            style="
-              width:100%;
-              height:100%;
-              object-fit:cover;
-              display:block;
-            "
-          >
-
-        </a>
         `
+        :''
+    }
 
-      : `
-        <div class="mock-window">
+    <div class="shot-grid">
 
-          <div class="mock-side"></div>
-
-          <div class="mock-main">
-
-            <div class="mock-line"></div>
-            <div class="mock-line short"></div>
-            <div class="mock-line"></div>
-
+      ${
+        (e.shots||[])
+          .map(shotCard)
+          .join('')
+        ||
+        `
+          <div class="empty">
+            No screenshots loaded.
           </div>
-
-        </div>
-        `;
-
-
-  return `
-    <div class="shot">
-
-      <div class="shot-img">
-        ${image}
-      </div>
-
-      <div class="shot-meta">
-
-        <strong>
-          ${escapeHtml(time)}
-        </strong>
-
-        ${escapeHtml(app)}
-
-        <br>
-
-        <span class="small">
-
-          Activity level
-          ${level ?? '—'}%
-          · Scrin evidence
-
-        </span>
-
-      </div>
+        `
+      }
 
     </div>
   `;
 }
 
+async function loadLiveDay(){
+  const e=currentEmployee();
 
-async function loadLiveDay() {
+  const date=
+    document.getElementById('screenDate')?.value;
 
-  const e =
-    employee();
-
-
-  const date =
-    document
-      .getElementById('screenDate')
-      ?.value;
-
-
-  if(
-    !e
-    ||
-    !date
-  ) {
-
+  if(!e||!date){
     return;
   }
 
-
-  if(
-    state.mode !== 'LIVE'
-  ) {
-
-    toast(
-      'Live Scrin connection is required to load daily evidence.'
-    );
-
+  if(state.mode!=='LIVE'){
+    toast('Live Scrin connection required.');
     return;
   }
 
-
-  const area =
-    document.getElementById(
-      'shotArea'
+  try{
+    const r=await fetch(
+      '/api/wgm/day-data',
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          connectionId:e.connectionId,
+          employmentId:e.employmentId,
+          date,
+          timezoneOffsetMinutes:
+            e.timezoneOffsetMinutes||0
+        })
+      }
     );
 
+    const d=await r.json();
 
-  if(
-    area
-  ) {
-
-    area.innerHTML =
-      `
-      <div class="empty">
-        Loading complete Scrin workday…
-      </div>
-      `;
-  }
-
-
-  try {
-
-    const r =
-      await fetch(
-        '/api/wgm/day-data',
-        {
-          method:
-            'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify({
-              connectionId:
-                e.connectionId,
-
-              employmentId:
-                e.employmentId,
-
-              date,
-
-              timezoneOffsetMinutes:
-                e.timezoneOffsetMinutes
-                ||
-                0
-            })
-        }
-      );
-
-
-    const d =
-      await r.json();
-
-
-    if(
-      !r.ok
-    ) {
-
-      throw new Error(
-        d.error
-        ||
-        'Could not load day data'
+    if(!r.ok){
+      throw Error(
+        d.error||
+        'Could not load day'
       );
     }
 
+    e.shots=
+      (d.screenshots||[]).map(
+        s=>[
+          s.time,
+          s.application,
+          s.activityLevel,
+          s.thumbUrl,
+          s.url
+        ]
+      );
 
-    e.shots =
-      (d.screenshots || [])
-        .map(
-          s => [
-            s.time,
-            s.application,
-            s.activityLevel,
-            s.thumbUrl,
-            s.url
-          ]
-        );
-
-
-    e.daySummary = {
-      date:
-        d.date,
-
-      firstTracked:
-        d.firstTracked,
-
-      lastTracked:
-        d.lastTracked,
-
-      trackedSeconds:
-        d.trackedSeconds,
-
-      screenshotCount:
-        d.screenshotCount,
-
-      activityCount:
-        d.activityCount,
-
-      sessions:
-        d.sessions
-        ||
-        [],
-
-      timezone:
-        e.timezone
-        ||
-        'Employee timezone'
+    e.daySummary={
+      date:d.date,
+      firstTracked:d.firstTracked,
+      lastTracked:d.lastTracked,
+      trackedSeconds:d.trackedSeconds,
+      screenshotCount:d.screenshotCount
     };
 
-
     saveEmployees();
-
     render();
 
-
-  } catch(err) {
-
+  }catch(err){
     toast(
-      `Could not load the complete workday: ${err.message}`
+      `Could not load workday: ${err.message}`
     );
   }
 }
 
-
-/* ==========================================================
-   MONITORING POLICY
-   ========================================================== */
-
-function defaultMonitoringPolicy() {
-
-  return {
-    enabled:
-      true,
-
-    mode:
-      'hourly',
-
-    screenshotsPerHour:
-      12,
-
-    dailyTarget:
-      96,
-
-    expectedDayHours:
-      8,
-
-    activityTracking:
-      true,
-
-    appUrlTracking:
-      true,
-
-    autoPauseMinutes:
-      5,
-
-    employeeNotification:
-      true,
-
-    providerSyncStatus:
-      'Saved in WGM · provider write not connected'
-  };
-}
-
-
-function monitoringPolicy(
-  e
-) {
-
-  if(
-    !e.monitoringPolicy
-  ) {
-
-    e.monitoringPolicy =
-      defaultMonitoringPolicy();
-
-    saveEmployees();
-  }
-
-
-  return e.monitoringPolicy;
-}
-
-
-function canEditMonitoringPolicy() {
-
-  return (
-    state.role === 'owner'
-    ||
-    state.role === 'employer'
-  );
-}
-
-
-function monitoringPolicyView(
-  e
-) {
-
-  const p =
-    monitoringPolicy(e);
-
-
-  const editable =
-    canEditMonitoringPolicy();
-
-
-  const disabled =
-    editable
-      ? ''
-      : 'disabled';
-
-
-  const hours =
-    Number(
-      p.expectedDayHours
-      ||
-      8
+function reports(){
+  if(state.role==='employer'){
+    const rs=employerReports(
+      state.portalEmployer
     );
-
-
-  const equiv =
-    p.mode === 'daily'
-
-      ? Number(
-          p.dailyTarget
-          ||
-          0
-        )
-        /
-        Math.max(
-          hours,
-          .5
-        )
-
-      : Number(
-          p.screenshotsPerHour
-          ||
-          0
-        );
-
-
-  const daily =
-    p.mode === 'daily'
-
-      ? Number(
-          p.dailyTarget
-          ||
-          0
-        )
-
-      : Math.round(
-          Number(
-            p.screenshotsPerHour
-            ||
-            0
-          )
-          *
-          hours
-        );
-
-
-  return `
-    <div class="grid two-col">
-
-      <div>
-
-        <div class="panel-title">
-          Monitoring Policy
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Screenshot capture
-          </label>
-
-          <select
-            id="policyEnabled"
-            ${disabled}
-          >
-
-            <option
-              value="true"
-              ${
-                p.enabled
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Enabled
-            </option>
-
-            <option
-              value="false"
-              ${
-                !p.enabled
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Disabled
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Capture mode
-          </label>
-
-          <select
-            id="policyMode"
-            ${disabled}
-          >
-
-            <option
-              value="hourly"
-              ${
-                p.mode === 'hourly'
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Screenshots per tracked hour
-            </option>
-
-            <option
-              value="daily"
-              ${
-                p.mode === 'daily'
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Daily screenshot target
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div
-          class="field"
-          id="policyHourlyWrap"
-          style="${
-            p.mode === 'hourly'
-              ? ''
-              : 'display:none'
-          }"
-        >
-
-          <label>
-            Screenshots per tracked hour
-          </label>
-
-          <input
-            id="policyShotsPerHour"
-            type="number"
-            min="1"
-            max="30"
-            step="1"
-            value="${Number(p.screenshotsPerHour||12)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div
-          class="field"
-          id="policyDailyWrap"
-          style="${
-            p.mode === 'daily'
-              ? ''
-              : 'display:none'
-          }"
-        >
-
-          <label>
-            Desired screenshots per workday
-          </label>
-
-          <input
-            id="policyDailyTarget"
-            type="number"
-            min="1"
-            step="1"
-            value="${Number(p.dailyTarget||96)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Expected workday hours
-          </label>
-
-          <input
-            id="policyExpectedDayHours"
-            type="number"
-            min="0.5"
-            max="24"
-            step="0.5"
-            value="${hours}"
-            ${disabled}
-          >
-
-        </div>
-
-      </div>
-
-
-      <div>
-
-        <div class="panel-title">
-          Evidence Controls
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Activity level tracking
-          </label>
-
-          <select
-            id="policyActivity"
-            ${disabled}
-          >
-
-            <option
-              value="true"
-              ${
-                p.activityTracking
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Enabled
-            </option>
-
-            <option
-              value="false"
-              ${
-                !p.activityTracking
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Disabled
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Apps & URLs
-          </label>
-
-          <select
-            id="policyApps"
-            ${disabled}
-          >
-
-            <option
-              value="true"
-              ${
-                p.appUrlTracking
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Enabled
-            </option>
-
-            <option
-              value="false"
-              ${
-                !p.appUrlTracking
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Disabled
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Auto-pause after inactivity
-          </label>
-
-          <input
-            id="policyAutoPause"
-            type="number"
-            min="0"
-            max="120"
-            step="1"
-            value="${Number(p.autoPauseMinutes||0)}"
-            ${disabled}
-          >
-
-        </div>
-
-
-        <div class="field">
-
-          <label>
-            Employee screenshot notification
-          </label>
-
-          <select
-            id="policyNotification"
-            ${disabled}
-          >
-
-            <option
-              value="true"
-              ${
-                p.employeeNotification
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Enabled
-            </option>
-
-            <option
-              value="false"
-              ${
-                !p.employeeNotification
-                  ? 'selected'
-                  : ''
-              }
-            >
-              Disabled
-            </option>
-
-          </select>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Current WGM target
-          </h4>
-
-          <p
-            id="policyEstimate"
-          >
-
-            ${
-              p.mode === 'daily'
-
-                ? `${daily} screenshots/day ≈ ${equiv.toFixed(2)} per tracked hour`
-
-                : `${Number(p.screenshotsPerHour||0)} screenshots/hour ≈ ${daily} over a ${hours}-hour day`
-            }
-
-          </p>
-
-        </div>
-
-
-        <div class="context-box">
-
-          <h4>
-            Provider synchronization
-          </h4>
-
-          <p>
-            ${escapeHtml(p.providerSyncStatus||'Saved in WGM · provider write not connected')}
-          </p>
-
-        </div>
-
-
-        ${
-          editable
-
-            ? `
-              <button
-                class="btn gold"
-                id="saveMonitoringPolicy"
-              >
-                Save Monitoring Policy
-              </button>
-              `
-
-            : `
-              <div class="small">
-                You can view this policy but cannot change it from this role.
-              </div>
-              `
-        }
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function updatePolicyEstimate() {
-
-  const mode =
-    document
-      .getElementById('policyMode')
-      ?.value
-    ||
-    'hourly';
-
-
-  const hw =
-    document.getElementById(
-      'policyHourlyWrap'
-    );
-
-
-  const dw =
-    document.getElementById(
-      'policyDailyWrap'
-    );
-
-
-  if(
-    hw
-  ) {
-
-    hw.style.display =
-      mode === 'hourly'
-        ? ''
-        : 'none';
-  }
-
-
-  if(
-    dw
-  ) {
-
-    dw.style.display =
-      mode === 'daily'
-        ? ''
-        : 'none';
-  }
-
-
-  const hours =
-    Math.max(
-      .5,
-      Number(
-        document
-          .getElementById('policyExpectedDayHours')
-          ?.value
-        ||
-        8
-      )
-    );
-
-
-  const hourly =
-    Math.max(
-      1,
-      Math.min(
-        30,
-        Number(
-          document
-            .getElementById('policyShotsPerHour')
-            ?.value
-          ||
-          12
-        )
-      )
-    );
-
-
-  const daily =
-    Math.max(
-      1,
-      Number(
-        document
-          .getElementById('policyDailyTarget')
-          ?.value
-        ||
-        96
-      )
-    );
-
-
-  const el =
-    document.getElementById(
-      'policyEstimate'
-    );
-
-
-  if(
-    el
-  ) {
-
-    el.textContent =
-      mode === 'daily'
-
-        ? `${daily} screenshots/day ≈ ${(daily/hours).toFixed(2)} per tracked hour`
-
-        : `${hourly} screenshots/hour ≈ ${Math.round(hourly*hours)} over a ${hours}-hour day`;
-  }
-}
-
-
-function saveMonitoringPolicy() {
-
-  const e =
-    employee();
-
-
-  if(
-    !e
-    ||
-    !canEditMonitoringPolicy()
-  ) {
-
-    return;
-  }
-
-
-  e.monitoringPolicy = {
-    enabled:
-      document
-        .getElementById('policyEnabled')
-        ?.value
-      ===
-      'true',
-
-    mode:
-      document
-        .getElementById('policyMode')
-        ?.value
-      ||
-      'hourly',
-
-    screenshotsPerHour:
-      Math.max(
-        1,
-        Math.min(
-          30,
-          Number(
-            document
-              .getElementById('policyShotsPerHour')
-              ?.value
-            ||
-            12
-          )
-        )
-      ),
-
-    dailyTarget:
-      Math.max(
-        1,
-        Number(
-          document
-            .getElementById('policyDailyTarget')
-            ?.value
-          ||
-          96
-        )
-      ),
-
-    expectedDayHours:
-      Math.max(
-        .5,
-        Number(
-          document
-            .getElementById('policyExpectedDayHours')
-            ?.value
-          ||
-          8
-        )
-      ),
-
-    activityTracking:
-      document
-        .getElementById('policyActivity')
-        ?.value
-      ===
-      'true',
-
-    appUrlTracking:
-      document
-        .getElementById('policyApps')
-        ?.value
-      ===
-      'true',
-
-    autoPauseMinutes:
-      Math.max(
-        0,
-        Number(
-          document
-            .getElementById('policyAutoPause')
-            ?.value
-          ||
-          0
-        )
-      ),
-
-    employeeNotification:
-      document
-        .getElementById('policyNotification')
-        ?.value
-      ===
-      'true',
-
-    providerSyncStatus:
-      'Saved in WGM · provider write not connected'
-  };
-
-
-  saveEmployees();
-
-
-  toast(
-    'Monitoring policy saved in WGM. Scrin provider write is not connected yet.'
-  );
-}
-
-
-/* ==========================================================
-   REPORT CENTER
-   ========================================================== */
-
-function reports() {
-
-  const emps =
-    visibleEmployees();
-
-
-  if(
-    state.role === 'employee'
-  ) {
-
-    const e =
-      employee();
-
-
-    const releases =
-      e
-        ? employeeReleasedReports(e.id)
-        : [];
-
 
     return shell(
       `
@@ -6009,93 +1526,27 @@ function reports() {
 
         <div>
 
-          <h2>
-            My Reports
-          </h2>
+          <h2>Reports</h2>
 
           <p>
-            Only White Glove-reviewed released reports are shown.
+            Human-reviewed reports for
+            ${esc(state.portalEmployer||'your company')}.
           </p>
 
         </div>
 
       </div>
 
-
       <div class="card panel">
 
         ${
-          releases.length
-
-            ? releaseHistoryTable(releases)
-
-            : `
+          rs.length
+            ?releaseTable(rs)
+            :`
               <div class="empty">
-                No released report is available yet.
+                No released reports.
               </div>
-              `
-        }
-
-      </div>
-      `,
-      'My Reports'
-    );
-  }
-
-
-  if(
-    state.role === 'employer'
-  ) {
-
-    const releases =
-      employerReleasedReports(
-        state.portalEmployer
-      );
-
-
-    return shell(
-      `
-      <div class="header-row">
-
-        <div>
-
-          <h2>
-            Reports
-          </h2>
-
-          <p>
-
-            Released monthly accountability reports
-            for
-            ${escapeHtml(state.portalEmployer||'your company')}.
-
-          </p>
-
-        </div>
-
-
-        <button
-          class="btn primary"
-          id="requestEmployerReport"
-        >
-          Request monthly report
-        </button>
-
-      </div>
-
-
-      <div class="card panel">
-
-        ${
-          releases.length
-
-            ? releaseHistoryTable(releases)
-
-            : `
-              <div class="empty">
-                No released reports are available yet.
-              </div>
-              `
+            `
         }
 
       </div>
@@ -6104,24 +1555,43 @@ function reports() {
     );
   }
 
+  if(state.role==='employee'){
+    const e=currentEmployee();
+    const rs=e?employeeReports(e.id):[];
 
-  const selected =
-    employeeById(
-      state.selectedEmployeeId
-    )
-    ||
-    emps[0];
+    return shell(
+      `
+      <div class="header-row">
 
+        <div>
 
-  if(
-    selected
-  ) {
+          <h2>My Reports</h2>
 
-    ensureEmployeeShape(
-      selected
+          <p>
+            Only released reports are visible.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div class="card panel">
+
+        ${
+          rs.length
+            ?releaseTable(rs)
+            :`
+              <div class="empty">
+                No released reports.
+              </div>
+            `
+        }
+
+      </div>
+      `,
+      'My Reports'
     );
   }
-
 
   return shell(
     `
@@ -6129,33 +1599,17 @@ function reports() {
 
       <div>
 
-        <h2>
-          Monthly Report Setup
-        </h2>
+        <h2>Fraud Screening Report</h2>
 
         <p>
-
-          Set the reporting period
-          and monthly context first.
-
-          WGM then calculates the month,
-          AI fills the approved five-page template,
-          and a human reviewer releases the final version.
-
+          Choose the VA and month.
+          The template is fixed;
+          only the report data changes.
         </p>
 
       </div>
 
-
-      <button
-        class="btn"
-        data-page="employees"
-      >
-        View employees
-      </button>
-
     </div>
-
 
     <div class="card panel">
 
@@ -6163,63 +1617,45 @@ function reports() {
 
         <div class="field">
 
-          <label>
-            From
-          </label>
+          <label>From</label>
 
           <input
             id="fromDate"
             type="date"
-            value="${state.reportPeriod.from}"
+            value="${state.period.from}"
           >
 
         </div>
 
-
         <div class="field">
 
-          <label>
-            To
-          </label>
+          <label>To</label>
 
           <input
             id="toDate"
             type="date"
-            value="${state.reportPeriod.to}"
+            value="${state.period.to}"
           >
 
         </div>
 
-
         <div class="field">
 
-          <label>
-            Employee
-          </label>
+          <label>Employee</label>
 
-          <select
-            id="reportEmployee"
-          >
+          <select id="reportEmployee">
 
             ${
-              emps.map(
-                x => `
-                <option
-                  value="${escapeHtml(x.id)}"
-                  ${
-                    x.id === state.selectedEmployeeId
-                      ? 'selected'
-                      : ''
-                  }
-                >
-
-                  ${escapeHtml(x.name)}
-
-                  —
-
-                  ${escapeHtml(x.employer||'Unassigned')}
-
-                </option>
+              active().map(
+                e=>`
+                  <option
+                    value="${esc(e.id)}"
+                    ${e.id===state.selectedEmployeeId?'selected':''}
+                  >
+                    ${esc(e.name)}
+                    —
+                    ${esc(e.employer||'Unassigned')}
+                  </option>
                 `
               ).join('')
             }
@@ -6228,81 +1664,18 @@ function reports() {
 
         </div>
 
-
         <div class="spacer"></div>
-
 
         <button
           id="generateBtn"
           class="btn gold"
         >
-          Calculate & Generate Report
+          Generate Screening Report
         </button>
 
       </div>
 
     </div>
-
-
-    ${
-      selected
-
-        ? `
-          <div
-            class="card panel"
-            style="margin-top:16px"
-          >
-
-            <div class="header-row">
-
-              <div>
-
-                <div class="panel-title">
-                  VA baseline
-                </div>
-
-                <div class="panel-sub">
-
-                  ${escapeHtml(selected.baseline?.generalRole||selected.role||'VA')}
-
-                  ·
-
-                  ${escapeHtml(selected.baseline?.generalSchedule||selected.schedule||'Schedule not set')}
-
-                  ·
-
-                  ${escapeHtml(selected.baseline?.timezone||selected.timezone||'Timezone not set')}
-
-                </div>
-
-              </div>
-
-
-              <button
-                class="btn"
-                data-open-baseline="${escapeHtml(selected.id)}"
-              >
-                Edit Baseline
-              </button>
-
-            </div>
-
-          </div>
-
-
-          <div
-            class="card panel"
-            style="margin-top:16px"
-          >
-
-            ${monthlyContextFields(selected)}
-
-          </div>
-          `
-
-        : ''
-    }
-
 
     <div
       class="card panel"
@@ -6310,22 +1683,41 @@ function reports() {
     >
 
       <div class="panel-title">
-        Released report history
+        Fixed template mapping
       </div>
 
-      ${
-        state.releasedReports.length
+      <div class="grid two-col">
 
-          ? releaseHistoryTable(
-              state.releasedReports
-            )
+        <div class="context-box">
 
-          : `
-            <div class="empty">
-              No released reports yet.
-            </div>
-            `
-      }
+          <h4>From Scrin/WGM</h4>
+
+          <p>
+            VA,
+            month,
+            timezone,
+            screenshot dates,
+            recorded hours
+            and evidence counts.
+          </p>
+
+        </div>
+
+        <div class="context-box">
+
+          <h4>From review</h4>
+
+          <p>
+            Four screening outcomes,
+            human-checked sample count,
+            findings,
+            reviewer sign-off
+            and release.
+          </p>
+
+        </div>
+
+      </div>
 
     </div>
     `,
@@ -6333,11 +1725,7 @@ function reports() {
   );
 }
 
-
-function releaseHistoryTable(
-  releases
-) {
-
+function releaseTable(rs){
   return `
     <table>
 
@@ -6345,55 +1733,54 @@ function releaseHistoryTable(
 
         <tr>
           <th>Employee</th>
-          <th>Period</th>
+          <th>Employer</th>
+          <th>Month</th>
           <th>Version</th>
           <th>Released</th>
-          <th>Reviewer</th>
           <th></th>
         </tr>
 
       </thead>
 
-
       <tbody>
 
         ${
-          releases.map(
-            r => `
-            <tr>
+          rs.map(
+            r=>`
+              <tr>
 
-              <td>
-                ${escapeHtml(r.employeeName)}
-              </td>
+                <td>
+                  ${esc(r.employeeName)}
+                </td>
 
-              <td>
-                ${escapeHtml(periodLabel(r.period))}
-              </td>
+                <td>
+                  ${esc(r.employer||'')}
+                </td>
 
-              <td>
-                v${r.version}
-              </td>
+                <td>
+                  ${esc(month(r.period.from))}
+                </td>
 
-              <td>
-                ${new Date(r.releasedAt).toLocaleString()}
-              </td>
+                <td>
+                  v${r.version}
+                </td>
 
-              <td>
-                ${escapeHtml(r.reviewer||'White Glove Reviewer')}
-              </td>
+                <td>
+                  ${new Date(r.releasedAt).toLocaleString()}
+                </td>
 
-              <td>
+                <td>
 
-                <button
-                  class="btn"
-                  data-view-release="${escapeHtml(r.id)}"
-                >
-                  View Report
-                </button>
+                  <button
+                    class="btn"
+                    data-view-release="${esc(r.id)}"
+                  >
+                    View Report
+                  </button>
 
-              </td>
+                </td>
 
-            </tr>
+              </tr>
             `
           ).join('')
         }
@@ -6404,423 +1791,180 @@ function releaseHistoryTable(
   `;
 }
 
-
-/* ==========================================================
-   REPORT GENERATION
-   ========================================================== */
-
-async function generateReport() {
-
-  const select =
-    document.getElementById(
-      'reportEmployee'
-    );
-
-
-  const id =
-    select?.value
-    ||
+async function generateReport(){
+  const id=
+    document.getElementById('reportEmployee')?.value||
     state.selectedEmployeeId;
 
+  const e=empById(id);
 
-  state.reportPeriod = {
+  state.period={
     from:
-      document
-        .getElementById('fromDate')
-        ?.value
-      ||
-      state.reportPeriod.from,
+      document.getElementById('fromDate')?.value||
+      state.period.from,
 
     to:
-      document
-        .getElementById('toDate')
-        ?.value
-      ||
-      state.reportPeriod.to
+      document.getElementById('toDate')?.value||
+      state.period.to
   };
 
-
-  state.selectedEmployeeId =
-    id;
-
-
-  const e =
-    employeeById(
-      id
-    );
-
-
   if(
-    !e
-    ||
-    e.excluded
-    ||
+    !e||
+    e.excluded||
     !e.employer
-  ) {
-
+  ){
     toast(
-      'This employee must be mapped to an employer before report generation.'
+      'Map this employee to an employer first.'
     );
 
     return;
   }
 
+  state.selectedEmployeeId=e.id;
+  state.reportEmployeeId=e.id;
+  state.report=null;
+  state.analytics=null;
+  state.meta=null;
+  state.reviewedShotIds=[];
+  state.resolvedFindings=[];
+  state.reviewerChecks=[
+    true,
+    true,
+    true,
+    true,
+    true
+  ];
 
-  ensureEmployeeShape(e);
-
-
-  const monthlyContext =
-    collectMonthlyContext(e);
-
-
-  state.reportEmployeeId =
-    e.id;
-
-
-  state.reportStatus =
-    'Calculating analytics';
-
-
-  state.report =
-    null;
-
-  state.reportAnalytics =
-    null;
-
-  state.reportPrevious =
-    null;
-
-  state.reportComparison =
-    null;
-
-  state.reportMetadata =
-    null;
-
+  state.reportStatus='Loading evidence';
 
   render();
 
+  try{
+    const ar=await fetch(
+      '/api/wgm/period-analytics',
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          connectionId:e.connectionId,
+          employmentId:e.employmentId,
+          from:state.period.from,
+          to:state.period.to,
+          timezoneOffsetMinutes:
+            e.timezoneOffsetMinutes||0,
+          expectedHours:
+            Number(e.expectedHours||0),
+          adjustedExpectedHours:
+            Number(e.expectedHours||0),
+          maxVisionScreenshots:12
+        })
+      }
+    );
 
-  try {
+    const ad=await ar.json();
 
-    const analyticsRes =
-      await fetch(
-        '/api/wgm/period-analytics',
-        {
-          method:
-            'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify({
-              connectionId:
-                e.connectionId,
-
-              employmentId:
-                e.employmentId,
-
-              from:
-                state.reportPeriod.from,
-
-              to:
-                state.reportPeriod.to,
-
-              timezoneOffsetMinutes:
-                e.timezoneOffsetMinutes
-                ||
-                0,
-
-              expectedHours:
-                Number(
-                  monthlyContext.expectedMonthlyHours
-                  ||
-                  e.expectedHours
-                  ||
-                  0
-                ),
-
-              adjustedExpectedHours:
-                Number(
-                  monthlyContext.adjustedExpectedHours
-                  ||
-                  0
-                ),
-
-              monthlyContext,
-
-              includePrevious:
-                true,
-
-              maxVisionScreenshots:
-                12
-            })
-        }
-      );
-
-
-    const analyticsData =
-      await analyticsRes.json();
-
-
-    if(
-      !analyticsRes.ok
-    ) {
-
-      throw new Error(
-        analyticsData.error
-        ||
-        'Period analytics failed'
+    if(!ar.ok){
+      throw Error(
+        ad.error||
+        'Analytics failed'
       );
     }
 
+    state.analytics=ad.current;
 
-    state.reportAnalytics =
-      analyticsData.current;
+    e.lastAnalytics=state.analytics;
 
-
-    state.reportPrevious =
-      analyticsData.previous
-      ||
-      null;
-
-
-    state.reportComparison =
-      analyticsData.comparison
-      ||
-      {
-        available:
-          false
-      };
-
-
-    state.reportMetadata =
-      analyticsData.metadata
-      ||
-      null;
-
-
-    e.trackedHours =
+    e.trackedHours=
       Number(
-        state.reportAnalytics
-          .metrics
-          ?.trackedHours
-        ||
-        0
+        state.analytics.metrics?.trackedHours||0
       );
 
-
-    e.activeDays =
-      Number(
-        state.reportAnalytics
-          .metrics
-          ?.activeDays
-        ||
-        0
-      );
-
-
-    e.expectedHours =
-      Number(
-        monthlyContext.adjustedExpectedHours
-        ||
-        0
-      );
-
-
-    e.workstreams =
-      (
-        state.reportAnalytics.categories
-        ||
-        []
-      )
-      .map(
-        x => [
-          x.name,
-          x.sharePercent
-        ]
-      );
-
-
-    e.apps =
-      (
-        state.reportAnalytics.apps
-        ||
-        []
-      )
-      .slice(
-        0,
-        10
-      )
-      .map(
-        x => [
-          x.name,
-          x.sharePercent
-        ]
-      );
-
-
-    e.lastAnalytics =
-      state.reportAnalytics;
-
-
-    e.reportingStatus =
-      'Analytics ready';
-
+    e.reportingStatus='Screening';
 
     saveEmployees();
 
-
-    state.reportStatus =
-      'Generating official report';
-
+    state.reportStatus='AI screening';
 
     render();
 
-
-    const reportRes =
-      await fetch(
-        '/api/reports/generate',
-        {
-          method:
-            'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json'
+    const rr=await fetch(
+      '/api/reports/generate',
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          employee:{
+            id:e.id,
+            name:e.name,
+            employer:e.employer,
+            role:e.role,
+            timezone:timezone(e)
           },
+          period:state.period,
+          analytics:state.analytics
+        })
+      }
+    );
 
-          body:
-            JSON.stringify({
-              employee: {
-                id:
-                  e.id,
+    const rd=await rr.json();
 
-                name:
-                  e.name,
-
-                role:
-                  e.role,
-
-                employer:
-                  e.employer,
-
-                connectionName:
-                  e.connectionName
-              },
-
-              baseline:
-                e.baseline,
-
-              monthlyContext,
-
-              period:
-                state.reportPeriod,
-
-              analytics:
-                state.reportAnalytics,
-
-              previous:
-                state.reportPrevious,
-
-              comparison:
-                state.reportComparison,
-
-              context:
-                e.context
-                ||
-                ''
-            })
-        }
-      );
-
-
-    const reportData =
-      await reportRes.json();
-
-
-    if(
-      !reportRes.ok
-    ) {
-
-      throw new Error(
-        reportData.error
-        ||
-        'Report generation failed'
+    if(!rr.ok){
+      throw Error(
+        rd.error||
+        'Screening failed'
       );
     }
 
+    state.report=rd.report;
 
-    state.report =
-      reportData.report;
-
-
-    state.reportMetadata = {
-      ...(
-        state.reportMetadata
-        ||
-        {}
-      ),
-
-      ...(
-        reportData.metadata
-        ||
-        {}
-      ),
-
+    state.meta={
+      ...(rd.metadata||{}),
       generatedBy:
-        reportData.generatedBy
-        ||
-        'unknown',
-
+        rd.generatedBy||'unknown',
       warning:
-        reportData.warning
-        ||
-        null
+        rd.warning||null
     };
 
+    state.reportStatus='Draft ready';
 
-    state.reportStatus =
-      'Draft ready';
-
-
-    e.reportingStatus =
-      'Draft ready';
-
+    e.reportingStatus='Draft ready';
 
     saveEmployees();
 
-
-    state.page =
-      'review';
-
+    state.page='review';
 
     render();
 
-
-  } catch(err) {
-
-    state.reportStatus =
-      'Generation failed';
-
+  }catch(err){
+    state.reportStatus='Generation failed';
 
     render();
-
 
     toast(
-      `Report generation failed: ${err.message}`
+      `Screening report failed: ${err.message}`
     );
   }
 }
 
+const unresolved=()=>{
+  const f=state.report?.findings||[];
 
-/* ==========================================================
-   REVIEW
-   ========================================================== */
+  return f.filter(
+    (_,i)=>!state.resolvedFindings.includes(i)
+  ).length;
+};
 
-function reviewQueueTable() {
+const humanChecked=()=>
+  state.reviewedShotIds.length;
+
+function reviewSummary(){
+  const e=
+    empById(state.reportEmployeeId)||
+    currentEmployee();
 
   return `
     <table>
@@ -6828,95 +1972,45 @@ function reviewQueueTable() {
       <thead>
 
         <tr>
-          <th>Employer</th>
           <th>Employee</th>
-          <th>Period</th>
-          <th>Schedule</th>
-          <th>Evidence</th>
-          <th>Review</th>
-          <th>Release</th>
+          <th>Month</th>
+          <th>AI-screened</th>
+          <th>Human checked</th>
+          <th>Unresolved</th>
+          <th>Status</th>
         </tr>
 
       </thead>
 
-
       <tbody>
 
-        ${
-          activeEmployees().map(
-            e => {
+        <tr>
 
-              const current =
-                state.reportEmployeeId
-                ===
-                e.id;
+          <td>
+            ${esc(e?.name||'—')}
+          </td>
 
+          <td>
+            ${esc(month(state.period.from))}
+          </td>
 
-              return `
-                <tr>
+          <td>
+            ${state.meta?.visionScreenshotsSent??0}
+          </td>
 
-                  <td>
-                    ${escapeHtml(e.employer||'Unassigned')}
-                  </td>
+          <td>
+            ${humanChecked()}
+          </td>
 
-                  <td>
+          <td>
+            ${unresolved()}
+          </td>
 
-                    <span
-                      class="row-link"
-                      data-open-id="${escapeHtml(e.id)}"
-                    >
-                      ${escapeHtml(e.name)}
-                    </span>
+          <td>
+            ${esc(state.reportStatus)}
+          </td>
 
-                  </td>
-
-                  <td>
-
-                    ${
-                      current
-                        ? escapeHtml(periodLabel())
-                        : '—'
-                    }
-
-                  </td>
-
-                  <td>
-                    ${percentLabel(employeeScheduleCoverage(e))}
-                  </td>
-
-                  <td>
-                    ${percentLabel(employeeEvidenceCoverage(e))}
-                  </td>
-
-                  <td>
-
-                    <span
-                      class="status ${statusClass(employeeReviewState(e))}"
-                    >
-
-                      <span class="dot"></span>
-
-                      ${employeeReviewState(e)}
-
-                    </span>
-
-                  </td>
-
-                  <td>
-
-                    ${
-                      current
-                        ? escapeHtml(state.reportStatus)
-                        : escapeHtml(e.reportingStatus||'—')
-                    }
-
-                  </td>
-
-                </tr>
-              `;
-            }
-          ).join('')
-        }
+        </tr>
 
       </tbody>
 
@@ -6924,16 +2018,24 @@ function reviewQueueTable() {
   `;
 }
 
+const checkTitle=k=>({
+  repeated_frozen:
+    'Repeated or frozen screens',
 
-function review() {
+  repetitive_cycling:
+    'Repetitive screen cycling',
 
-  const e =
-    employeeById(
-      state.reportEmployeeId
-    )
-    ||
-    employee();
+  activity_simulation:
+    'Visible activity-simulation tools',
 
+  repeated_across_days:
+    'Repeated sequences across days'
+})[k]||k;
+
+function review(){
+  const e=
+    empById(state.reportEmployeeId)||
+    currentEmployee();
 
   return shell(
     `
@@ -6941,98 +2043,44 @@ function review() {
 
       <div>
 
-        <h2>
-          Human Review Queue
-        </h2>
+        <h2>Human Review</h2>
 
         <p>
-
-          Review the official report draft
-          against the calculated analytics
-          and monthly context.
-
-          Approval is required
-          before employer release.
-
+          The circular HUMAN REVIEWED stamp
+          is valid only after sign-off.
         </p>
 
       </div>
-
 
       <button
         class="btn primary"
         data-page="reports"
       >
-        Generate Report
+        Generate another
       </button>
 
     </div>
 
-
-    <div
-      class="card panel"
-      style="margin-bottom:16px"
-    >
-
-      <div class="panel-title">
-        Queue
-      </div>
-
-      ${reviewQueueTable()}
-
-    </div>
-
-
     ${
-      state.reportStatus === 'Not generated'
-
-        ? `
+      state.report
+        ?reviewConsole(e)
+        :`
           <div class="card empty">
-            Generate a report to open the review console.
+            Generate a screening report first.
           </div>
-          `
-
-        : reviewConsole(e)
+        `
     }
     `,
     'Review Queue'
   );
 }
 
+function reviewConsole(e){
+  const shots=
+    state.analytics?.selectedScreenshotEvidence||[];
 
-function reviewConsole(
-  e
-) {
-
-  if(
-    !e
-    ||
-    !state.report
-  ) {
-
-    return `
-      <div class="card empty">
-        No current report draft.
-      </div>
-    `;
-  }
-
-
-  const a =
-    state.reportAnalytics
-    ||
-    latestAnalytics(e);
-
-
-  const r =
-    state.report;
-
-
-  const p1 =
-    r.page1
-    ||
-    {};
-
+  const findings=
+    state.report?.findings||[];
 
   return `
     <div class="card panel">
@@ -7040,227 +2088,140 @@ function reviewConsole(
       <div class="employee-head">
 
         <div class="employee-avatar">
-
-          ${escapeHtml(
-            e.initials
-            ||
-            initials(e.name)
-          )}
-
+          ${esc(e?.initials||ini(e?.name||'VA'))}
         </div>
-
 
         <div>
 
           <h2 style="margin:0">
-
-            ${escapeHtml(e.name)}
-
+            ${esc(e?.name||'')}
             —
-
-            ${escapeHtml(periodLabel())}
-
+            ${esc(month(state.period.from))}
           </h2>
 
           <div class="small">
-
-            ${escapeHtml(e.employer||'Unassigned')}
-
+            ${esc(e?.employer||'')}
             ·
-
-            ${escapeHtml(e.connectionName||'Scrin')}
-
+            Screenshot fraud screening
           </div>
 
         </div>
 
-
         <div class="spacer"></div>
 
-
         <span
-          class="status ${statusClass(state.reportStatus)}"
+          class="status ${statusCls(state.reportStatus)}"
         >
 
           <span class="dot"></span>
 
-          ${escapeHtml(state.reportStatus)}
+          ${esc(state.reportStatus)}
 
         </span>
 
       </div>
 
+      ${
+        state.meta?.warning
+          ?`
+            <div class="callout">
 
-      <div class="review-summary">
+              <strong>Generation note</strong>
 
-        <div class="review-stat">
+              ${esc(state.meta.warning)}
 
-          <div class="k">
-            Tracked
-          </div>
-
-          <div class="v">
-            ${hoursLabel(a?.metrics?.trackedHours||0)}
-          </div>
-
-        </div>
-
-
-        <div class="review-stat">
-
-          <div class="k">
-            Schedule
-          </div>
-
-          <div class="v">
-            ${percentLabel(a?.metrics?.scheduleCoveragePercent)}
-          </div>
-
-        </div>
-
-
-        <div class="review-stat">
-
-          <div class="k">
-            Evidence
-          </div>
-
-          <div class="v">
-            ${percentLabel(a?.evidence?.evidenceCoveragePercent)}
-          </div>
-
-        </div>
-
-
-        <div class="review-stat">
-
-          <div class="k">
-            Vision sample
-          </div>
-
-          <div class="v">
-            ${state.reportMetadata?.visionScreenshotsSent??0}
-          </div>
-
-        </div>
-
-
-        <div class="review-stat">
-
-          <div class="k">
-            Review
-          </div>
-
-          <div class="v">
-            ${a?.review?.status||'—'}
-          </div>
-
-        </div>
-
-      </div>
-
+            </div>
+          `
+          :''
+      }
 
       <div class="grid two-col">
 
         <div>
 
           <div class="panel-title">
-            Official report draft
+            AI screening draft
           </div>
 
+          <div class="context-box">
 
-          <div class="review-text">
+            <h4>
+              ${esc(state.report.screeningHeadline||'')}
+            </h4>
 
-            <b>
-              ${escapeHtml(p1.monthlyConclusion||'')}
-            </b>
-
-            <br><br>
-
-            ${escapeHtml(p1.summarySentence||'')}
-
-            <br><br>
-
-            <b>
-              Coaching:
-            </b>
-
-            ${escapeHtml(p1.coachingTakeaway||'')}
-
-            <br><br>
-
-            <b>
-              Integrity:
-            </b>
-
-            ${escapeHtml(p1.integrityStatement||'')}
+            <p>
+              ${esc(state.report.screeningSubtext||'')}
+            </p>
 
           </div>
-
 
           ${
-            state.reportMetadata?.warning
+            (state.report.checks||[])
+              .map(
+                c=>`
+                  <div class="context-box">
 
-              ? `
-                <div class="callout">
+                    <h4>
+                      ${esc(checkTitle(c.key))}
+                      ·
+                      ${esc(c.status)}
+                    </h4>
 
-                  <strong>
-                    Generation note
-                  </strong>
+                    <p>
+                      ${esc(c.detail)}
+                    </p>
 
-                  ${escapeHtml(state.reportMetadata.warning)}
-
-                </div>
+                  </div>
                 `
-
-              : ''
+              ).join('')
           }
 
         </div>
 
-
         <div>
 
           <div class="panel-title">
-            Reviewer checklist
+            Reviewer sign-off
           </div>
 
+          <div class="field">
+
+            <label>Reviewer name</label>
+
+            <input
+              id="reviewerName"
+              value="${esc(state.reviewerName)}"
+            >
+
+          </div>
 
           <div class="checklist">
 
             ${
               [
-                'Hours and adjusted schedule reconcile',
-                'Evidence coverage is correctly represented',
-                'Approved monthly context is correctly applied',
-                'No unsupported work or misconduct conclusion',
-                'Client-facing language is appropriate'
-              ]
+                'I reviewed the AI conclusion',
+                'I checked the supplied screenshot sample',
+                'I reviewed every flagged sequence',
+                'The wording does not overstate the evidence',
+                'The report is appropriate for employer release'
+              ].map(
+                (x,i)=>`
+                  <label class="check">
 
-              .map(
-                (c, i) => `
-                <label class="check">
+                    <input
+                      type="checkbox"
+                      data-check="${i}"
+                      ${state.reviewerChecks[i]?'checked':''}
+                    >
 
-                  <input
-                    type="checkbox"
-                    data-check="${i}"
-                    ${
-                      state.reviewerChecks[i]
-                        ? 'checked'
-                        : ''
-                    }
-                  >
+                    ${x}
 
-                  ${c}
-
-                </label>
+                  </label>
                 `
-              )
-              .join('')
+              ).join('')
             }
 
           </div>
-
 
           <div class="actions">
 
@@ -7268,14 +2229,14 @@ function reviewConsole(
               class="btn"
               id="previewReport"
             >
-              Preview Official Report
+              Preview report
             </button>
 
             <button
-              id="approveBtn"
               class="btn gold"
+              id="approveBtn"
             >
-              Approve
+              Approve Human Review
             </button>
 
           </div>
@@ -7284,55 +2245,183 @@ function reviewConsole(
 
       </div>
 
+      <div
+        class="panel-title"
+        style="margin-top:18px"
+      >
+        Screenshot sample · ${shots.length}
+      </div>
+
+      <div class="shot-grid">
+
+        ${
+          shots.length
+            ?shots.map(
+                s=>`
+                  <div
+                    class="shot"
+                    style="position:relative"
+                  >
+
+                    <label
+                      style="
+                        position:absolute;
+                        z-index:3;
+                        top:8px;
+                        left:8px;
+                        background:#fff;
+                        border-radius:8px;
+                        padding:6px;
+                        font-size:12px
+                      "
+                    >
+
+                      <input
+                        type="checkbox"
+                        data-review-shot="${esc(s.screenshotId)}"
+                        ${
+                          state.reviewedShotIds.includes(s.screenshotId)
+                            ?'checked'
+                            :''
+                        }
+                      >
+
+                      Human checked
+
+                    </label>
+
+                    <div class="shot-img">
+
+                      <a
+                        href="${esc(s.imageUrl||s.thumbUrl||'')}"
+                        target="_blank"
+                      >
+
+                        <img
+                          src="${esc(s.thumbUrl||s.imageUrl||'')}"
+                          style="
+                            width:100%;
+                            height:100%;
+                            object-fit:cover;
+                            display:block
+                          "
+                        >
+
+                      </a>
+
+                    </div>
+
+                    <div class="shot-meta">
+
+                      <strong>
+                        ${esc(s.dateTime||'')}
+                      </strong>
+
+                      ${esc(s.application||'')}
+
+                    </div>
+
+                  </div>
+                `
+              ).join('')
+            :`
+              <div class="empty">
+                No visual screenshot sample available.
+              </div>
+            `
+        }
+
+      </div>
 
       ${
-        a?.review?.reasons?.length
+        shots.length
+          ?`
+            <div
+              class="actions"
+              style="margin-top:10px"
+            >
 
-          ? `
-            <div class="callout">
-
-              <strong>
-                Automated review reasons
-              </strong>
-
-              ${
-                a.review.reasons
-                  .map(
-                    x => `
-                    <div>
-                      • ${escapeHtml(x)}
-                    </div>
-                    `
-                  )
-                  .join('')
-              }
+              <button
+                class="btn"
+                id="markAllReviewed"
+              >
+                Mark all visible screenshots reviewed
+              </button>
 
             </div>
-            `
-
-          : ''
+          `
+          :''
       }
 
+      <div
+        class="panel-title"
+        style="margin-top:18px"
+      >
+        AI findings
+      </div>
 
       ${
-        /Approved|Released/
-          .test(
-            state.reportStatus
-          )
+        findings.length
+          ?findings.map(
+              (f,i)=>`
+                <div class="context-box">
 
-          ? `
+                  <h4>
+                    Finding ${i+1}
+                  </h4>
+
+                  <p>
+                    ${esc(f.reason)}
+                  </p>
+
+                  <label class="check">
+
+                    <input
+                      type="checkbox"
+                      data-resolve-finding="${i}"
+                      ${
+                        state.resolvedFindings.includes(i)
+                          ?'checked'
+                          :''
+                      }
+                    >
+
+                    Reviewed / resolved by human reviewer
+
+                  </label>
+
+                </div>
+              `
+            ).join('')
+          :`
+            <div class="context-box">
+
+              <h4>
+                No AI finding recorded
+              </h4>
+
+              <p>
+                No review-worthy visual pattern
+                was returned by the screening draft.
+              </p>
+
+            </div>
+          `
+      }
+
+      ${
+        /Approved|Released/.test(state.reportStatus)
+          ?`
             <div class="callout">
 
               <strong>
-                Approved for release
+                Human review approved
               </strong>
 
-              Releasing creates
-              an immutable employer-facing snapshot
-              of this exact report version.
+              The report can now be released
+              with the HUMAN REVIEWED stamp.
 
             </div>
-
 
             <div class="actions">
 
@@ -7340,737 +2429,738 @@ function reviewConsole(
                 class="btn"
                 id="previewReport2"
               >
-                Preview Official Report
+                Preview signed report
               </button>
 
               <button
                 class="btn primary"
                 id="releaseBtn"
               >
-
                 ${
-                  state.reportStatus === 'Released'
-
-                    ? 'Released · Employer notified'
-
-                    : 'Approve & Release'
+                  state.reportStatus==='Released'
+                    ?'Released · Employer notified'
+                    :'Release to Employer'
                 }
-
               </button>
 
             </div>
-            `
-
-          : ''
+          `
+          :''
       }
 
     </div>
   `;
 }
 
-
-/* ==========================================================
-   OFFICIAL 12 × 8 REPORT
-   ========================================================== */
-
-function officialReportStyles() {
-
+function reportStyles(){
   return `
     <style>
 
       @page{
-        size:12in 8in;
+        size:A4 portrait;
         margin:0;
       }
 
-      .wgr-wrap{
-        max-width:12in;
+      .fs-wrap{
+        max-width:210mm;
         margin:0 auto;
       }
 
-      .wgr-actions{
+      .fs-actions{
         display:flex;
         justify-content:space-between;
-        gap:12px;
-        margin-bottom:18px;
+        gap:10px;
+        margin-bottom:16px;
       }
 
-      .wgr-page{
-        width:12in;
-        height:8in;
-        background:white;
+      .fs-page{
+        width:210mm;
+        height:297mm;
+        background:#fff;
         box-sizing:border-box;
-        padding:.42in .52in .38in;
-        position:relative;
+        padding:12mm 12mm 9mm;
         margin:0 auto 24px;
         box-shadow:0 8px 30px rgba(0,0,0,.10);
-        color:#1A2947;
-        overflow:hidden;
+        color:#192c4e;
         font-family:Aptos,Arial,sans-serif;
-      }
-
-      .wgr-header{
-        display:flex;
-        justify-content:space-between;
-        gap:20px;
-        align-items:flex-start;
-      }
-
-      .wgr-eyebrow{
-        font-size:10px;
-        font-weight:800;
-        letter-spacing:.1em;
-      }
-
-      .wgr-person{
-        font-size:11px;
-        font-weight:700;
-        margin-top:3px;
-        color:#5d6675;
-      }
-
-      .wgr-head-right{
-        text-align:right;
-        font-size:9px;
-        line-height:1.5;
-        font-weight:700;
-      }
-
-      .wgr-rule{
-        height:2px;
-        background:#C9A84C;
-        margin:9px 0 18px;
-      }
-
-      .wgr-title{
-        font-size:25px;
-        line-height:1.03;
-        font-weight:800;
-        letter-spacing:-.02em;
-      }
-
-      .wgr-subtitle{
-        font-size:11px;
-        line-height:1.45;
-        color:#606a79;
-        margin-top:5px;
-      }
-
-      .wgr-quote{
-        font-size:21px;
-        line-height:1.18;
-        font-weight:750;
-        max-width:9.8in;
-        margin:12px 0 7px;
-      }
-
-      .wgr-coaching{
-        font-size:11px;
-        color:#5a6473;
-        font-weight:700;
-      }
-
-      .wgr-badges{
-        display:flex;
-        gap:8px;
-        margin-top:12px;
-      }
-
-      .wgr-badge{
-        border:1px solid #d9dee6;
-        border-radius:999px;
-        padding:5px 9px;
-        font-size:8px;
-        font-weight:800;
-      }
-
-      .wgr-grid4{
-        display:grid;
-        grid-template-columns:repeat(4,1fr);
-        gap:10px;
-        margin:15px 0;
-      }
-
-      .wgr-metric{
-        background:#f5f6f8;
-        border-top:3px solid #1A2947;
-        padding:10px;
-      }
-
-      .wgr-metric strong{
-        display:block;
-        font-size:20px;
-        line-height:1;
-      }
-
-      .wgr-metric span{
-        display:block;
-        font-size:7.5px;
-        font-weight:800;
-        letter-spacing:.07em;
-        margin-top:5px;
-      }
-
-      .wgr-metric small{
-        display:block;
-        font-size:7px;
-        color:#707887;
-        margin-top:4px;
-        line-height:1.3;
-      }
-
-      .wgr-section{
-        margin-top:13px;
-      }
-
-      .wgr-section-title{
-        font-size:9px;
-        font-weight:800;
-        letter-spacing:.09em;
-        text-transform:uppercase;
-        margin-bottom:7px;
-      }
-
-      .wgr-matters{
-        display:grid;
-        grid-template-columns:repeat(3,1fr);
-        gap:10px;
-      }
-
-      .wgr-matter{
-        border-top:1px solid #dfe3e8;
-        padding-top:8px;
-      }
-
-      .wgr-matter b{
-        display:block;
-        font-size:9px;
-      }
-
-      .wgr-matter p{
-        font-size:8px;
-        line-height:1.35;
-        color:#4e596d;
-        margin:4px 0 0;
-      }
-
-      .wgr-two{
-        display:grid;
-        grid-template-columns:1fr 1fr;
-        gap:12px;
-      }
-
-      .wgr-card{
-        background:#f7f8fa;
-        border:1px solid #e0e4e9;
-        padding:10px;
-      }
-
-      .wgr-card h4{
-        font-size:8px;
-        text-transform:uppercase;
-        letter-spacing:.06em;
-        margin:0 0 5px;
-      }
-
-      .wgr-card p{
-        font-size:8px;
-        line-height:1.38;
-        margin:0;
-        color:#4e596d;
-      }
-
-      .wgr-callout{
-        border-left:4px solid #C9A84C;
-        background:#faf8f1;
-        padding:9px 11px;
-        font-size:8px;
-        line-height:1.4;
-      }
-
-      .wgr-callout b{
-        display:block;
-        margin-bottom:3px;
-      }
-
-      .wgr-week-grid{
-        display:grid;
-        grid-template-columns:repeat(5,1fr);
-        gap:8px;
-      }
-
-      .wgr-week{
-        background:#f7f8fa;
-        border:1px solid #e0e4e9;
-        padding:8px;
-        min-height:1.25in;
-      }
-
-      .wgr-week b{
-        display:block;
-        font-size:8px;
-      }
-
-      .wgr-week .time{
-        font-size:12px;
-        font-weight:800;
-        margin:6px 0;
-      }
-
-      .wgr-week p{
-        font-size:7px;
-        line-height:1.32;
-        margin:0;
-        color:#4e596d;
-      }
-
-      .wgr-category{
-        display:grid;
-        grid-template-columns:1.55in 1fr .38in;
-        gap:7px;
-        align-items:center;
-        font-size:7.5px;
-        margin:5px 0;
-      }
-
-      .wgr-track{
-        height:7px;
-        border-radius:6px;
-        background:#e7e9ed;
         overflow:hidden;
       }
 
-      .wgr-fill{
-        height:100%;
-        background:#1A2947;
-      }
-
-      .wgr-table{
-        width:100%;
-        border-collapse:collapse;
-        font-size:7.5px;
-      }
-
-      .wgr-table th{
-        text-align:left;
-        border-bottom:2px solid #1A2947;
-        padding:6px 5px;
-        text-transform:uppercase;
-        font-size:6.6px;
-        letter-spacing:.05em;
-      }
-
-      .wgr-table td{
-        padding:7px 5px;
-        border-bottom:1px solid #e0e4e9;
-        vertical-align:top;
-        line-height:1.3;
-      }
-
-      .wgr-strengths{
-        display:grid;
-        grid-template-columns:repeat(3,1fr);
-        gap:10px;
-      }
-
-      .wgr-strength{
-        background:#f7f8fa;
-        border:1px solid #e0e4e9;
-        padding:10px;
-      }
-
-      .wgr-strength b{
-        display:block;
-        font-size:9px;
-      }
-
-      .wgr-strength p{
-        font-size:8px;
-        line-height:1.35;
-        margin:5px 0 0;
-        color:#4e596d;
-      }
-
-      .wgr-task-grid{
-        display:grid;
-        grid-template-columns:repeat(5,1fr);
-        gap:8px;
-      }
-
-      .wgr-task{
-        border:1px solid #e0e4e9;
-        background:#fafafa;
-        padding:8px;
-      }
-
-      .wgr-task b{
-        font-size:8px;
-      }
-
-      .wgr-task small{
-        display:block;
-        font-size:6.8px;
-        color:#6d7584;
-        margin:2px 0 6px;
-      }
-
-      .wgr-task span{
-        display:block;
-        font-size:7.3px;
-        line-height:1.3;
-        margin:3px 0;
-      }
-
-      .wgr-evidence{
-        display:grid;
-        grid-template-columns:repeat(3,1fr);
-        gap:10px;
-      }
-
-      .wgr-evidence-card{
-        border-top:3px solid #C9A84C;
-        background:#f8f8f8;
-        padding:9px;
-      }
-
-      .wgr-evidence-card b{
-        display:block;
-        font-size:8px;
-      }
-
-      .wgr-evidence-card p{
-        font-size:7.5px;
-        line-height:1.35;
-        margin:5px 0 0;
-      }
-
-      .wgr-footer{
-        position:absolute;
-        left:.52in;
-        right:.52in;
-        bottom:.22in;
-        border-top:1px solid #dfe3e8;
-        padding-top:5px;
+      .fs-top{
         display:flex;
         justify-content:space-between;
-        font-size:6px;
-        letter-spacing:.07em;
-        color:#717987;
       }
 
-      .wgr-support{
+      .fs-logo{
+        width:29mm;
+        height:auto;
+      }
+
+      .fs-sample{
+        background:#f7efd9;
+        color:#8a6818;
+        border-radius:7px;
+        padding:7px 12px;
+        font-size:8px;
+        font-weight:800;
+      }
+
+      .fs-title{
+        font-size:27px;
+        line-height:1.05;
+        margin:13mm 0 3mm;
+        font-weight:800;
+        color:#1a2d4f;
+      }
+
+      .fs-meta{
+        display:flex;
+        gap:24px;
+        font-size:9px;
+        color:#8a919c;
+        margin-bottom:7mm;
+      }
+
+      .fs-meta strong{
+        color:#1b2d4d;
+      }
+
+      .fs-hero{
+        background:#1d3154;
+        border-radius:16px;
+        padding:8mm 10mm;
+        display:flex;
+        align-items:center;
+        gap:9mm;
+        color:#fff;
+      }
+
+      .fs-stamp{
+        width:31mm;
+        height:31mm;
+        border:2.4px solid #d7ad2d;
+        border-radius:50%;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        text-align:center;
+        color:#d7ad2d;
+        flex:0 0 auto;
+      }
+
+      .fs-stamp .tick{
+        width:7mm;
+        height:7mm;
+        border:1.8px solid #d7ad2d;
+        border-radius:50%;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-size:13px;
+        font-weight:900;
+        margin-bottom:2mm;
+      }
+
+      .fs-stamp b{
+        font-size:8px;
+        letter-spacing:.13em;
+        line-height:1.45;
+      }
+
+      .fs-stamp small{
+        font-size:4.5px;
+        color:#aab4c4;
+        margin-top:2mm;
+      }
+
+      .fs-hero .eyebrow{
+        font-size:8px;
+        color:#e0b62f;
+        font-weight:800;
+        letter-spacing:.08em;
+      }
+
+      .fs-hero h2{
+        font-size:21px;
+        line-height:1.08;
+        margin:3mm 0 2mm;
+        color:#fff;
+      }
+
+      .fs-hero p{
+        font-size:9px;
+        color:#aeb9ca;
+        margin:0;
+      }
+
+      .fs-pending{
+        font-size:7px;
+        color:#e0b62f;
+        margin-top:2mm;
+      }
+
+      .fs-kpis{
         display:grid;
-        grid-template-columns:repeat(4,1fr);
-        gap:8px;
+        grid-template-columns:repeat(3,1fr);
+        gap:4mm;
+        margin:6mm 0 7mm;
       }
 
-      .wgr-support .wgr-card{
-        padding:8px;
+      .fs-kpi{
+        border-radius:11px;
+        padding:6mm 5mm;
+        background:#e9eff6;
       }
 
-      .wgr-support .wgr-card p{
+      .fs-kpi.gold{
+        background:#f8f0da;
+      }
+
+      .fs-kpi strong{
+        display:block;
+        font-size:23px;
+        color:#1a2d4f;
+      }
+
+      .fs-kpi.gold strong{
+        color:#9a771a;
+      }
+
+      .fs-kpi b{
+        display:block;
+        font-size:8px;
+        margin-top:2mm;
+      }
+
+      .fs-kpi span{
+        display:block;
+        font-size:7px;
+        color:#7a8390;
+        margin-top:1mm;
+      }
+
+      .fs-head{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin-bottom:2.5mm;
+      }
+
+      .fs-head h3{
+        font-size:15px;
+        margin:0;
+      }
+
+      .fs-head span{
+        font-size:7px;
+        font-weight:800;
+        color:#9a771a;
+      }
+
+      .fs-checks{
+        border:1px solid #dce2e9;
+        border-radius:10px;
+        padding:0 5mm;
+      }
+
+      .fs-check{
+        display:grid;
+        grid-template-columns:8mm 1fr auto;
+        gap:3mm;
+        align-items:center;
+        padding:4mm 0;
+        border-bottom:1px solid #e3e7ec;
+      }
+
+      .fs-check:last-child{
+        border-bottom:0;
+      }
+
+      .fs-icon{
+        width:6.5mm;
+        height:6.5mm;
+        border-radius:50%;
+        background:#f8f0da;
+        color:#9a771a;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:900;
+      }
+
+      .fs-check.review .fs-icon{
+        background:#fff0e6;
+        color:#a84b19;
+      }
+
+      .fs-check.na .fs-icon{
+        background:#eef1f4;
+        color:#76808f;
+      }
+
+      .fs-copy b{
+        display:block;
+        font-size:8.5px;
+      }
+
+      .fs-copy p{
+        font-size:7.2px;
+        color:#737c8a;
+        margin:1mm 0 0;
+      }
+
+      .fs-pill{
+        border-radius:99px;
+        padding:2mm 4mm;
+        background:#f8f0da;
+        color:#8e6a18;
+        font-size:6.3px;
+        font-weight:800;
+      }
+
+      .fs-pill.review{
+        background:#fff0e6;
+        color:#a84b19;
+      }
+
+      .fs-pill.na{
+        background:#eef1f4;
+        color:#697483;
+      }
+
+      .fs-bottom{
+        display:grid;
+        grid-template-columns:1.25fr .95fr;
+        gap:5mm;
+        margin-top:6mm;
+      }
+
+      .fs-card{
+        border:1px solid #dce2e9;
+        border-radius:10px;
+        padding:5mm;
+        min-height:69mm;
+      }
+
+      .fs-cardhead{
+        display:flex;
+        justify-content:space-between;
+        margin-bottom:4mm;
+      }
+
+      .fs-cardhead b{
+        font-size:10px;
+      }
+
+      .fs-cardhead span{
+        font-size:6.5px;
+        color:#6f7987;
+        font-weight:700;
+      }
+
+      .fs-weekdays,
+      .fs-cal{
+        display:grid;
+        grid-template-columns:repeat(7,1fr);
+        gap:2mm;
+        text-align:center;
+      }
+
+      .fs-weekdays div{
+        font-size:6px;
+        color:#8d949f;
+      }
+
+      .fs-day{
+        width:8.2mm;
+        height:8.2mm;
+        margin:0 auto;
+        border-radius:4px;
+        background:#f0f2f5;
+        color:#c0c4ca;
+        display:flex;
+        align-items:center;
+        justify-content:center;
         font-size:7px;
       }
 
-      .wgr-small{
-        font-size:7px;
-        line-height:1.3;
-        color:#626c7a;
+      .fs-day.has{
+        background:#1d3154;
+        color:#fff;
       }
 
+      .fs-day.blank{
+        visibility:hidden;
+      }
+
+      .fs-legend{
+        display:flex;
+        gap:5mm;
+        font-size:6.5px;
+        color:#7b8490;
+        margin-top:4mm;
+      }
+
+      .fs-legend i{
+        display:inline-block;
+        width:3mm;
+        height:3mm;
+        border-radius:1px;
+        margin-right:1.5mm;
+      }
+
+      .fs-legend .yes{
+        background:#1d3154;
+      }
+
+      .fs-legend .no{
+        background:#e3e6ea;
+      }
+
+      .fs-note{
+        font-size:6.3px;
+        color:#9aa0aa;
+        margin-top:3mm;
+      }
+
+      .fs-cover-title{
+        font-size:8px;
+        font-weight:800;
+      }
+
+      .fs-big{
+        font-size:25px;
+        font-weight:800;
+        margin-top:5mm;
+      }
+
+      .fs-biglabel{
+        font-size:8px;
+        font-weight:700;
+      }
+
+      .fs-muted{
+        font-size:7px;
+        color:#818a98;
+        margin-top:1.5mm;
+      }
+
+      .fs-divider{
+        height:1px;
+        background:#e1e5ea;
+        margin:5mm 0;
+      }
+
+      .fs-row{
+        display:flex;
+        justify-content:space-between;
+        font-size:7.5px;
+      }
+
+      .fs-sign{
+        border-top:1px solid #dce2e9;
+        margin-top:6mm;
+        padding-top:4mm;
+        display:grid;
+        grid-template-columns:7mm 1fr;
+        gap:3mm;
+      }
+
+      .fs-signicon{
+        width:6mm;
+        height:6mm;
+        border-radius:50%;
+        background:#f8f0da;
+        color:#9a771a;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:900;
+      }
+
+      .fs-sign b{
+        font-size:8px;
+      }
+
+      .fs-sign p{
+        font-size:6.8px;
+        color:#737c8a;
+        margin:1mm 0 0;
+      }
+
+      .fs-foot{
+        font-size:5.5px;
+        color:#a0a6af;
+        margin-top:1.5mm;
+      }
 
       @media print{
 
         body{
-          background:#fff !important;
+          background:#fff!important;
         }
 
         .sidebar,
         .topbar,
-        .wgr-actions,
-        .no-print{
-          display:none !important;
+        .fs-actions{
+          display:none!important;
         }
 
         .main,
         .content{
-          margin:0 !important;
-          padding:0 !important;
-          width:100% !important;
-          max-width:none !important;
+          margin:0!important;
+          padding:0!important;
+          width:100%!important;
         }
 
-        .wgr-wrap{
-          max-width:none !important;
+        .fs-page{
+          box-shadow:none!important;
+          margin:0!important;
+          width:210mm!important;
+          height:297mm!important;
+          -webkit-print-color-adjust:exact;
+          print-color-adjust:exact;
         }
 
-        .wgr-page{
-          margin:0 !important;
-          box-shadow:none !important;
-          page-break-after:always;
-          break-after:page;
-        }
-
-        .wgr-page:last-child{
-          page-break-after:auto;
-          break-after:auto;
-        }
       }
 
     </style>
   `;
 }
 
+function monthDays(p){
+  const s=new Date(`${p.from}T00:00:00Z`);
+  const y=s.getUTCFullYear();
+  const m=s.getUTCMonth();
 
-function reportHeader(
-  e,
-  period,
-  status,
-  page,
-  total = 5
-) {
+  const n=
+    new Date(
+      Date.UTC(y,m+1,0)
+    ).getUTCDate();
 
-  return `
-    <div class="wgr-header">
+  return Array.from(
+    {length:n},
+    (_,i)=>{
+      const d=
+        new Date(
+          Date.UTC(y,m,i+1)
+        );
 
-      <div>
-
-        <div class="wgr-eyebrow">
-          MONTHLY VA ACCOUNTABILITY REPORT
-        </div>
-
-        <div class="wgr-person">
-
-          ${escapeHtml(e.name)}
-
-          |
-
-          ${escapeHtml(e.role||'VIRTUAL ASSISTANT')}
-
-        </div>
-
-      </div>
-
-
-      <div class="wgr-head-right">
-
-        <div>
-          ${escapeHtml(periodLabel(period).toUpperCase())}
-        </div>
-
-        <div>
-
-          ${
-            status === 'Released'
-
-              ? '✓ Human reviewed | Released'
-
-              : status === 'Approved'
-
-                ? '✓ Human reviewed | Approved'
-
-                : 'Human review pending'
-          }
-
-        </div>
-
-      </div>
-
-    </div>
-
-
-    <div class="wgr-rule"></div>
-  `;
+      return {
+        day:i+1,
+        iso:d.toISOString().slice(0,10),
+        weekday:d.getUTCDay()
+      };
+    }
+  );
 }
 
+function calendar(p,dates){
+  const ds=monthDays(p);
 
-function reportFooter(
-  page,
-  total = 5
-) {
-
-  return `
-    <div class="wgr-footer">
-
-      <span>
-        WHITE GLOVE MONITOR | CONFIDENTIAL
-      </span>
-
-      <span>
-
-        ${String(page).padStart(2,'0')}
-
-        /
-
-        ${String(total).padStart(2,'0')}
-
-      </span>
-
-    </div>
-  `;
-}
-
-
-function reportMetric(
-  value,
-  label,
-  sub = ''
-) {
-
-  return `
-    <div class="wgr-metric">
-
-      <strong>
-        ${value}
-      </strong>
-
-      <span>
-        ${label}
-      </span>
-
-      <small>
-        ${sub}
-      </small>
-
-    </div>
-  `;
-}
-
-
-function officialReportMarkup({
-  e,
-  report,
-  analytics,
-  comparisonData,
-  metadata,
-  period,
-  status,
-  version,
-  releaseInfo,
-  monthlyContextOverride
-}) {
-
-  const p1 =
-    report?.page1
-    ||
-    {};
-
-
-  const p2 =
-    report?.page2
-    ||
-    {};
-
-
-  const p3 =
-    report?.page3
-    ||
-    {};
-
-
-  const p4 =
-    report?.page4
-    ||
-    {};
-
-
-  const p5 =
-    report?.page5
-    ||
-    {};
-
-
-  const weeks =
-    p2.weeks
-    ||
-    [];
-
-
-  const cats =
-    p2.workCategories
-    ||
-    [];
-
-
-  const strengths =
-    p3.strengths
-    ||
-    [];
-
-
-  const consistency =
-    p4.weeks
-    ||
-    [];
-
-
-  const taskMap =
-    p5.taskMap
-    ||
-    [];
-
-
-  const verified =
-    p5.verifiedEvidence
-    ||
-    [];
-
-
-  const monthlyContext =
-    monthlyContextOverride
-    ||
-    getMonthlyContext(
-      e,
-      monthKeyFromDate(
-        period.from
-      )
+  const set=
+    new Set(
+      (dates||[]).map(String)
     );
 
+  const offset=
+    ((ds[0]?.weekday??1)+6)%7;
 
   return `
-    ${officialReportStyles()}
+    <div class="fs-weekdays">
 
+      <div>MON</div>
+      <div>TUE</div>
+      <div>WED</div>
+      <div>THU</div>
+      <div>FRI</div>
+      <div>SAT</div>
+      <div>SUN</div>
 
-    <div class="wgr-wrap">
+    </div>
 
+    <div class="fs-cal">
 
-      <div class="wgr-actions no-print">
+      ${
+        Array.from(
+          {length:offset},
+          ()=>`
+            <div class="fs-day blank">
+              0
+            </div>
+          `
+        ).join('')
+      }
+
+      ${
+        ds.map(
+          d=>`
+            <div
+              class="fs-day ${set.has(d.iso)?'has':''}"
+            >
+              ${d.day}
+            </div>
+          `
+        ).join('')
+      }
+
+    </div>
+  `;
+}
+
+function mappedChecks(report){
+  const m=
+    new Map(
+      (report?.checks||[])
+        .map(c=>[c.key,c])
+    );
+
+  return [
+    [
+      'repeated_frozen',
+      'Repeated or frozen screens'
+    ],
+    [
+      'repetitive_cycling',
+      'Repetitive screen cycling'
+    ],
+    [
+      'activity_simulation',
+      'Visible activity-simulation tools'
+    ],
+    [
+      'repeated_across_days',
+      'Repeated sequences across days'
+    ]
+  ].map(
+    ([key,title])=>({
+      key,
+      title,
+      ...(
+        m.get(key)||
+        {
+          status:'not_assessed',
+          detail:'This check was not assessed.'
+        }
+      )
+    })
+  );
+}
+
+function checkView(c){
+  return c.status==='review'
+    ?{
+      cls:'review',
+      icon:'!',
+      pill:'REVIEW'
+    }
+    :c.status==='not_assessed'
+      ?{
+        cls:'na',
+        icon:'–',
+        pill:'NOT ASSESSED'
+      }
+      :{
+        cls:'',
+        icon:'✓',
+        pill:'CHECKED'
+      };
+}
+
+function reportMarkup({
+  e,
+  report,
+  a,
+  meta,
+  p,
+  status,
+  reviewer,
+  checked,
+  unresolvedCount,
+  version=null,
+  released=false
+}){
+  const human=
+    /Approved|Released/.test(status);
+
+  const screened=
+    Number(
+      meta?.visionScreenshotsSent??0
+    );
+
+  const dates=
+    a?.screenshotDates||[];
+
+  const days=
+    monthDays(p).length;
+
+  const noDates=
+    Math.max(
+      0,
+      days-dates.length
+    );
+
+  const checks=
+    mappedChecks(report);
+
+  const done=
+    checks.filter(
+      c=>c.status!=='not_assessed'
+    ).length;
+
+  const needs=
+    report?.overallResult==='review'||
+    unresolvedCount>0;
+
+  const recorded=
+    a?.metrics?.trackedHours;
+
+  const expected=
+    Number(
+      a?.metrics?.expectedHours||0
+    );
+
+  const badge=
+    state.mode!=='LIVE'&&!released
+      ?`
+        <div class="fs-sample">
+          DESIGN MOCK-UP / SAMPLE DATA
+        </div>
+      `
+      :'';
+
+  return `
+    ${reportStyles()}
+
+    <div class="fs-wrap">
+
+      <div class="fs-actions">
 
         <button
           class="btn"
-          data-page="${
-            releaseInfo
-              ? 'reports'
-              : 'review'
-          }"
+          data-page="${released?'reports':'review'}"
         >
           Back
         </button>
 
-
-        <div
-          style="
-            display:flex;
-            gap:8px
-          "
-        >
+        <div>
 
           <span
-            class="status ${statusClass(status)}"
+            class="status ${statusCls(status)}"
           >
 
             <span class="dot"></span>
 
-            ${escapeHtml(status)}
+            ${esc(status)}
 
             ${
               version
-                ? ` · v${version}`
-                : ''
+                ?` · v${version}`
+                :''
             }
 
           </span>
-
 
           <button
             class="btn primary"
@@ -8083,1103 +3173,351 @@ function officialReportMarkup({
 
       </div>
 
+      <section class="fs-page">
 
-      <!-- PAGE 1 -->
+        <div class="fs-top">
 
-      <section class="wgr-page">
+          <img
+            class="fs-logo"
+            src="${WGM_LOGO}"
+            alt="White Glove Monitor"
+          >
 
-        ${
-          reportHeader(
-            e,
-            period,
-            status,
-            1
-          )
-        }
+          ${badge}
 
-
-        <div class="wgr-quote">
-          ${escapeHtml(p1.monthlyConclusion||'Monthly accountability review')}
         </div>
 
-
-        <div class="wgr-coaching">
-          ${escapeHtml(p1.coachingTakeaway||'')}
+        <div class="fs-title">
+          Fraud screening &amp; activity review
         </div>
 
+        <div class="fs-meta">
 
-        <div class="wgr-subtitle">
-          ${escapeHtml(p1.summarySentence||'')}
-        </div>
+          <strong>${esc(e.name)}</strong>
 
-
-        <div class="wgr-badges">
-
-          <span class="wgr-badge">
-
-            DILIGENCE ·
-            ${escapeHtml(p1.diligenceStatus||'—')}
-
+          <span>
+            ${esc(month(p.from))}
           </span>
 
-          <span class="wgr-badge">
-
-            INTEGRITY ·
-            ${escapeHtml(p1.integrityStatus||'—')}
-
+          <span>
+            Screenshot-based review
           </span>
 
-          <span class="wgr-badge">
-            WHITE GLOVE HUMAN REVIEW
+          <span>
+            ${esc(timezone(e))}
           </span>
 
         </div>
 
+        <div class="fs-hero">
 
-        <div class="wgr-grid4">
+          <div class="fs-stamp">
 
-          ${
-            reportMetric(
-              hoursLabel(
-                analytics?.metrics?.trackedHours
-                ||
-                0
-              ),
-              'TRACKED TIME',
-              'Selected month'
-            )
-          }
+            <div class="tick">
+              ✓
+            </div>
 
-          ${
-            reportMetric(
-              percentLabel(
-                analytics?.metrics?.scheduleCoveragePercent
-              ),
-              'SCHEDULE COVERAGE',
-              'Adjusted monthly expectation'
-            )
-          }
-
-          ${
-            reportMetric(
-              String(
-                analytics?.metrics?.activeDays
-                ??
-                '—'
-              ),
-              'ACTIVE WORKDAYS',
-              'Recorded workdays'
-            )
-          }
-
-          ${
-            reportMetric(
-              String(
-                analytics?.review?.reasons?.length
-                ||
-                0
-              ),
-              'REVIEW ITEMS',
-              'Not automated misconduct findings'
-            )
-          }
-
-        </div>
-
-
-        <div class="wgr-two">
-
-          <div class="wgr-card">
-
-            <h4>
-              Schedule & approved adjustments
-            </h4>
-
-            <p>
-
-              Base expected:
-              ${hoursLabel(monthlyContext.expectedMonthlyHours||0)}
-
-              ·
-              Adjusted expected:
+            <b>
               ${
-                hoursLabel(
-                  monthlyContext.adjustedExpectedHours
-                  ??
-                  adjustedExpectedHours(monthlyContext)
+                human
+                  ?'HUMAN'
+                  :'REVIEW'
+              }
+              <br>
+              ${
+                human
+                  ?'REVIEWED'
+                  :'PENDING'
+              }
+            </b>
+
+            <small>
+              WHITE GLOVE MONITOR
+            </small>
+
+          </div>
+
+          <div>
+
+            <div class="eyebrow">
+              SCREENSHOT SCREENING COMPLETE
+            </div>
+
+            <h2>
+              ${
+                esc(
+                  report?.screeningHeadline||
+                  (
+                    needs
+                      ?'Patterns require human review.'
+                      :'No suspicious patterns found.'
+                  )
                 )
               }
-
-              ·
-              PTO:
-              ${hoursLabel(monthlyContext.approvedPTOHours||0)}
-
-              ·
-              Sick:
-              ${hoursLabel(monthlyContext.sickLeaveHours||0)}
-
-              ·
-              Holiday:
-              ${hoursLabel(monthlyContext.holidayHours||0)}
-
-              ·
-              Client-approved:
-              ${hoursLabel(monthlyContext.clientApprovedHoursOff||0)}
-
-            </p>
-
-          </div>
-
-
-          <div class="wgr-card">
-
-            <h4>
-              Employer / business context
-            </h4>
+            </h2>
 
             <p>
-
-              ${escapeHtml(
-                monthlyContext.materialBusinessContext
-                ||
-                monthlyContext.employerNotes
-                ||
-                'No additional business context was supplied for this month.'
-              )}
-
+              ${
+                esc(
+                  report?.screeningSubtext||
+                  'In the screenshots reviewed for this report.'
+                )
+              }
             </p>
 
-          </div>
-
-        </div>
-
-
-        <div class="wgr-section">
-
-          <div class="wgr-section-title">
-            What matters this month
-          </div>
-
-
-          <div class="wgr-matters">
-
             ${
-              (p1.whatMatters || [])
-                .slice(
-                  0,
-                  3
-                )
-                .map(
-                  x => `
-                  <div class="wgr-matter">
-
-                    <b>
-                      ${escapeHtml(x.title)}
-                    </b>
-
-                    <p>
-                      ${escapeHtml(x.explanation)}
-                    </p>
-
+              human
+                ?''
+                :`
+                  <div class="fs-pending">
+                    Human sign-off is still pending.
                   </div>
-                  `
-                )
-                .join('')
+                `
             }
 
           </div>
 
         </div>
 
+        <div class="fs-kpis">
 
-        <div
-          class="wgr-two"
-          style="margin-top:12px"
-        >
+          <div class="fs-kpi gold">
 
-          <div class="wgr-callout">
+            <strong>
+              ${screened.toLocaleString()}
+            </strong>
 
             <b>
-              Positive confirmation
+              Screenshots screened
             </b>
 
-            ${escapeHtml(p1.positiveConfirmation||'')}
+            <span>
+              AI screening of supplied images
+            </span>
 
           </div>
 
+          <div class="fs-kpi">
 
-          <div class="wgr-callout">
+            <strong>
+              ${Number(checked||0).toLocaleString()}
+            </strong>
 
             <b>
-              White Glove action
+              Human-checked screenshots
             </b>
 
-            ${escapeHtml(p1.whiteGloveAction||'')}
+            <span>
+              A sample across capture dates
+            </span>
+
+          </div>
+
+          <div class="fs-kpi">
+
+            <strong>
+              ${Number(unresolvedCount||0)}
+            </strong>
+
+            <b>
+              Unresolved findings
+            </b>
+
+            <span>
+              Following human review
+            </span>
 
           </div>
 
         </div>
 
+        <div class="fs-head">
 
-        <div
-          class="wgr-small"
-          style="margin-top:7px"
-        >
+          <h3>
+            What we checked
+          </h3>
 
-          <b>
-            Integrity:
-          </b>
-
-          ${escapeHtml(p1.integrityStatement||'')}
-
-        </div>
-
-
-        ${reportFooter(1)}
-
-      </section>
-
-
-      <!-- PAGE 2 -->
-
-      <section class="wgr-page">
-
-        ${
-          reportHeader(
-            e,
-            period,
-            status,
-            2
-          )
-        }
-
-
-        <div class="wgr-title">
-          Monthly Activity & Evidence
-        </div>
-
-
-        <div class="wgr-subtitle">
-
-          Week-by-week work summary,
-          directional category mix,
-          and evidence review coverage.
+          <span>
+            ${done}
+            CHECK${done===1?'':'S'}
+            COMPLETED
+          </span>
 
         </div>
 
+        <div class="fs-checks">
 
-        <div class="wgr-section">
+          ${
+            checks.map(
+              c=>{
+                const v=checkView(c);
 
-          <div class="wgr-week-grid">
+                return `
+                  <div class="fs-check ${v.cls}">
 
-            ${
-              weeks
-                .slice(
-                  0,
-                  5
-                )
-                .map(
-                  w => `
-                  <div class="wgr-week">
-
-                    <b>
-                      ${escapeHtml(w.label)}
-                    </b>
-
-                    <div class="wgr-small">
-                      ${escapeHtml(w.dateRange)}
+                    <div class="fs-icon">
+                      ${v.icon}
                     </div>
 
-                    <div class="time">
-                      ${escapeHtml(w.trackedTime)}
+                    <div class="fs-copy">
+
+                      <b>
+                        ${esc(c.title)}
+                      </b>
+
+                      <p>
+                        ${esc(c.detail)}
+                      </p>
+
                     </div>
 
-                    <p>
-                      ${escapeHtml(w.summary)}
-                    </p>
+                    <div class="fs-pill ${v.cls}">
+                      ${v.pill}
+                    </div>
 
                   </div>
-                  `
-                )
-                .join('')
-            }
-
-          </div>
+                `;
+              }
+            ).join('')
+          }
 
         </div>
 
+        <div class="fs-bottom">
 
-        <div
-          class="wgr-two"
-          style="margin-top:12px"
-        >
+          <div class="fs-card">
 
-          <div>
+            <div class="fs-cardhead">
 
-            <div class="wgr-section-title">
-              Directional work categories
+              <b>
+                Screenshot dates
+              </b>
+
+              <span>
+                ${esc(month(p.from).toUpperCase())}
+              </span>
+
             </div>
 
-            ${
-              cats.length
+            ${calendar(p,dates)}
 
-                ? cats
-                    .slice(
-                      0,
-                      7
-                    )
-                    .map(
-                      x => `
-                      <div class="wgr-category">
+            <div class="fs-legend">
 
-                        <div>
-                          ${escapeHtml(x.name)}
-                        </div>
+              <span>
+                <i class="yes"></i>
+                Capture supplied
+              </span>
 
-                        <div class="wgr-track">
+              <span>
+                <i class="no"></i>
+                No capture supplied
+              </span>
 
-                          <div
-                            class="wgr-fill"
-                            style="
-                              width:${
-                                Math.max(
-                                  0,
-                                  Math.min(
-                                    100,
-                                    Number(
-                                      x.percent
-                                      ||
-                                      0
-                                    )
-                                  )
-                                )
-                              }%
-                            "
-                          ></div>
+            </div>
 
-                        </div>
-
-                        <div>
-                          ${Math.round(Number(x.percent||0))}%
-                        </div>
-
-                      </div>
-                      `
-                    )
-                    .join('')
-
-                : `
-                  <div class="wgr-small">
-                    No reliable category mix was available.
-                  </div>
-                  `
-            }
+            <div class="fs-note">
+              No screenshots on a date does not mean
+              the person did not work.
+            </div>
 
           </div>
 
+          <div class="fs-card">
 
-          <div>
+            <div class="fs-cover-title">
+              REVIEW COVERAGE
+            </div>
 
-            <div class="wgr-card">
+            <div class="fs-big">
+              ${dates.length}
+            </div>
 
-              <h4>
-                Review coverage
-              </h4>
+            <div class="fs-biglabel">
+              dates with screenshots
+            </div>
 
-              <p>
+            <div class="fs-muted">
+              ${noDates}
+              dates without supplied screenshots
+            </div>
 
-                Active days reviewed:
-                ${p2.reviewCoverage?.activeDaysReviewed??0}
+            <div class="fs-divider"></div>
 
-                <br>
+            <div class="fs-row">
 
-                Tracked time reconciled:
+              <span>
+                Recorded hours
+              </span>
+
+              <b>
                 ${
-                  escapeHtml(
-                    p2.reviewCoverage?.trackedTimeReconciled
-                    ||
-                    hoursLabel(analytics?.metrics?.trackedHours||0)
-                  )
+                  Number.isFinite(Number(recorded))
+                    ?hrs(recorded)
+                    :'Not supplied'
                 }
-
-                <br>
-
-                Screenshot coverage:
-                ${escapeHtml(p2.reviewCoverage?.screenshotCoverage||'—')}
-
-                <br>
-
-                Integrity review:
-                ${escapeHtml(p2.reviewCoverage?.integrityReview||'—')}
-
-              </p>
+              </b>
 
             </div>
-
 
             <div
-              class="wgr-callout"
-              style="margin-top:9px"
+              class="fs-muted"
+              style="margin-top:4mm"
             >
+              Shown from Scrin.io tracked time when supplied.
+              Screenshot spacing is not used to calculate hours.
+            </div>
 
-              <b>
-                Tracking context
-              </b>
-
-              ${escapeHtml(p2.trackingContext||'')}
-
+            <div
+              class="fs-muted"
+              style="margin-top:4mm"
+            >
+              ${
+                expected
+                  ?`Schedule context: ${hrs(expected)} expected for the selected period.`
+                  :'No schedule or attendance target applied.'
+              }
             </div>
 
           </div>
 
         </div>
 
+        <div class="fs-sign">
 
-        ${reportFooter(2)}
-
-      </section>
-
-
-      <!-- PAGE 3 -->
-
-      <section class="wgr-page">
-
-        ${
-          reportHeader(
-            e,
-            period,
-            status,
-            3
-          )
-        }
-
-
-        <div class="wgr-title">
-          Strengths, Coaching & Client Context
-        </div>
-
-
-        <div class="wgr-subtitle">
-
-          Evidence-backed positives,
-          practical coaching,
-          and the client context needed
-          to interpret the month fairly.
-
-        </div>
-
-
-        <div class="wgr-section">
-
-          <div class="wgr-strengths">
-
-            ${
-              strengths
-                .slice(
-                  0,
-                  3
-                )
-                .map(
-                  x => `
-                  <div class="wgr-strength">
-
-                    <b>
-                      ✓ ${escapeHtml(x.title)}
-                    </b>
-
-                    <p>
-                      ${escapeHtml(x.explanation)}
-                    </p>
-
-                  </div>
-                  `
-                )
-                .join('')
-            }
-
+          <div class="fs-signicon">
+            ✓
           </div>
 
-        </div>
-
-
-        <div
-          class="wgr-two"
-          style="margin-top:12px"
-        >
-
-          <div class="wgr-card">
-
-            <h4>
-              Reliability positive
-            </h4>
-
-            <p>
-              ${escapeHtml(p3.reliabilityPositive||'')}
-            </p>
-
-          </div>
-
-
-          <div class="wgr-card">
-
-            <h4>
-              Coaching opportunity
-            </h4>
-
-            <p>
-              ${escapeHtml(p3.coachingOpportunity||'')}
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="wgr-two"
-          style="margin-top:10px"
-        >
-
-          <div class="wgr-card">
-
-            <h4>
-              Why it matters
-            </h4>
-
-            <p>
-              ${escapeHtml(p3.whyItMatters||'')}
-            </p>
-
-          </div>
-
-
-          <div class="wgr-card">
-
-            <h4>
-              Next expectation
-            </h4>
-
-            <p>
-              ${escapeHtml(p3.nextExpectation||'')}
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="wgr-two"
-          style="margin-top:10px"
-        >
-
-          <div class="wgr-callout">
+          <div>
 
             <b>
-              White Glove coaching completed
-            </b>
-
-            ${escapeHtml(p3.coachingCompleted||'')}
-
-          </div>
-
-
-          <div class="wgr-callout">
-
-            <b>
-              Client context
-            </b>
-
-            ${escapeHtml(p3.clientContext||'')}
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="wgr-callout"
-          style="margin-top:10px"
-        >
-
-          <b>
-            What White Glove will watch next month
-          </b>
-
-          ${escapeHtml(p3.watchingNextMonth||'')}
-
-        </div>
-
-
-        ${reportFooter(3)}
-
-      </section>
-
-
-      <!-- PAGE 4 -->
-
-      <section class="wgr-page">
-
-        ${
-          reportHeader(
-            e,
-            period,
-            status,
-            4
-          )
-        }
-
-
-        <div class="wgr-title">
-          Monthly Consistency Review
-        </div>
-
-
-        <div class="wgr-subtitle">
-          ${escapeHtml(p4.consistencyHeadline||'')}
-        </div>
-
-
-        <div
-          class="wgr-small"
-          style="margin-top:5px"
-        >
-          ${escapeHtml(p4.consistencyExplanation||'')}
-        </div>
-
-
-        <div class="wgr-grid4">
-
-          ${
-            reportMetric(
-              String(p4.weeksMet??0),
-              'WEEKS MET',
-              'Configured schedule standard'
-            )
-          }
-
-          ${
-            reportMetric(
-              String(p4.weeksTotal??consistency.length),
-              'WEEKS REVIEWED',
-              'Available weekly blocks'
-            )
-          }
-
-          ${
-            reportMetric(
-              String(p4.integrityConcernCount??0),
-              'INTEGRITY ITEMS',
-              'Human review context'
-            )
-          }
-
-          ${
-            reportMetric(
-              percentLabel(
-                analytics?.evidence?.activeDayCoveragePercent
-              ),
-              'DAY EVIDENCE',
-              'Active days with screenshots'
-            )
-          }
-
-        </div>
-
-
-        <table class="wgr-table">
-
-          <thead>
-
-            <tr>
-              <th>Week</th>
-              <th>Schedule</th>
-              <th>Tracked time</th>
-              <th>Work pattern</th>
-              <th>Work relevance</th>
-              <th>Integrity</th>
-            </tr>
-
-          </thead>
-
-
-          <tbody>
-
-            ${
-              consistency
-                .slice(
-                  0,
-                  5
-                )
-                .map(
-                  w => `
-                  <tr>
-
-                    <td>
-                      ${escapeHtml(w.week)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(w.schedule)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(w.trackedTime)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(w.workPattern)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(w.workRelevance)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(w.integrity)}
-                    </td>
-
-                  </tr>
-                  `
-                )
-                .join('')
-            }
-
-          </tbody>
-
-        </table>
-
-
-        <div
-          class="wgr-two"
-          style="margin-top:12px"
-        >
-
-          <div class="wgr-card">
-
-            <h4>
-              Recurring patterns
-            </h4>
-
-            <p>
-
               ${
-                (p4.recurringPatterns || [])
-                  .map(
-                    x =>
-                      `• ${escapeHtml(x)}`
-                  )
-                  .join('<br>')
+                human
+                  ?`Human review signed off | ${esc(reviewer||'White Glove Reviewer')}`
+                  :'Human review pending'
               }
-
-            </p>
-
-          </div>
-
-
-          <div class="wgr-card">
-
-            <h4>
-              Recommended focus
-            </h4>
+            </b>
 
             <p>
-              ${escapeHtml(p4.recommendedFocus||'')}
-            </p>
-
-            <br>
-
-            <p>
-
-              <b>
-                Previous period:
-              </b>
-
               ${
-                comparisonData?.available
-
-                  ? `
-                    Tracked
-                    ${signedNumber(comparisonData.trackedHoursDelta,'h')}
-
-                    ·
-                    evidence
-                    ${signedNumber(comparisonData.evidenceCoverageDeltaPoints,' pts')}
-
-                    ·
-                    active days
-                    ${signedNumber(comparisonData.activeDaysDelta)}
-                    `
-
-                  : 'Comparison unavailable.'
+                human
+                  ?`${Number(checked||0)} sample screenshot${Number(checked||0)===1?'':'s'} checked; all flagged sequences reviewed.`
+                  :'This draft cannot be released with the HUMAN REVIEWED stamp until reviewer sign-off.'
               }
-
             </p>
 
-          </div>
-
-        </div>
-
-
-        ${reportFooter(4)}
-
-      </section>
-
-
-      <!-- PAGE 5 -->
-
-      <section class="wgr-page">
-
-        ${
-          reportHeader(
-            e,
-            period,
-            status,
-            5
-          )
-        }
-
-
-        <div class="wgr-title">
-          Monthly Task Map
-        </div>
-
-
-        <div class="wgr-subtitle">
-
-          Observed category presence by week.
-
-          This is not an exact hour-allocation
-          or productivity score.
-
-        </div>
-
-
-        <div class="wgr-section">
-
-          <div class="wgr-task-grid">
-
-            ${
-              taskMap
-                .slice(
-                  0,
-                  5
+            <div class="fs-foot">
+              ${
+                esc(
+                  report?.scopeNote||
+                  'Review scope: Supplied screenshots only. Hidden automation and physical mouse movers may not be visible.'
                 )
-                .map(
-                  x => `
-                  <div class="wgr-task">
-
-                    <b>
-                      ${escapeHtml(x.week)}
-                    </b>
-
-                    <small>
-                      ${escapeHtml(x.dateRange)}
-                    </small>
-
-                    ${
-                      (x.categories || []).length
-
-                        ? x.categories
-                            .slice(
-                              0,
-                              7
-                            )
-                            .map(
-                              c => `
-                              <span>
-                                • ${escapeHtml(c)}
-                              </span>
-                              `
-                            )
-                            .join('')
-
-                        : `
-                          <span>
-                            No reliable category mix
-                          </span>
-                          `
-                    }
-
-                  </div>
-                  `
-                )
-                .join('')
-            }
+              }
+            </div>
 
           </div>
 
         </div>
-
-
-        <div class="wgr-section">
-
-          <div class="wgr-section-title">
-            What we verified
-          </div>
-
-
-          <div class="wgr-evidence">
-
-            ${
-              verified.length
-
-                ? verified
-                    .slice(
-                      0,
-                      3
-                    )
-                    .map(
-                      x => `
-                      <div class="wgr-evidence-card">
-
-                        <b>
-                          ${escapeHtml(x.dateTime||'Evidence point')}
-                        </b>
-
-                        <p>
-                          ${escapeHtml(x.activity||'')}
-                        </p>
-
-                        <p class="wgr-small">
-                          Evidence ID:
-                          ${escapeHtml(x.screenshotId||'')}
-                        </p>
-
-                      </div>
-                      `
-                    )
-                    .join('')
-
-                : `
-                  <div class="wgr-evidence-card">
-
-                    <b>
-                      No visual evidence point published
-                    </b>
-
-                    <p>
-
-                      The AI did not return
-                      a screenshot-specific statement
-                      that met the evidence threshold
-                      for this report.
-
-                    </p>
-
-                  </div>
-                  `
-            }
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="wgr-two"
-          style="margin-top:12px"
-        >
-
-          <div class="wgr-callout">
-
-            <b>
-              Client takeaway
-            </b>
-
-            ${escapeHtml(p5.clientTakeaway||'')}
-
-          </div>
-
-
-          <div class="wgr-callout">
-
-            <b>
-              White Glove action / next month
-            </b>
-
-            ${escapeHtml(p5.whiteGloveActionNextMonth||'')}
-
-          </div>
-
-        </div>
-
-
-        <div class="wgr-section">
-
-          <div class="wgr-support">
-
-            ${
-              [
-                'reviewed',
-                'interpreted',
-                'coached',
-                'nextMonth'
-              ]
-              .map(
-                k => `
-                <div class="wgr-card">
-
-                  <h4>
-
-                    ${
-                      k === 'nextMonth'
-
-                        ? 'Next month'
-
-                        : (
-                            k.charAt(0).toUpperCase()
-                            +
-                            k.slice(1)
-                          )
-                    }
-
-                  </h4>
-
-                  <p>
-                    ${escapeHtml(p5.support?.[k]||'')}
-                  </p>
-
-                </div>
-                `
-              )
-              .join('')
-            }
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="wgr-small"
-          style="margin-top:8px"
-        >
-
-          Generated by
-          ${escapeHtml(metadata?.generatedBy||'WGM')}
-
-          ·
-          model
-          ${escapeHtml(metadata?.model||'not configured')}
-
-          ·
-          vision sample
-          ${metadata?.visionScreenshotsSent??0}
-          screenshots
-
-          ·
-          analysis
-          ${escapeHtml(metadata?.analysisVersion||analytics?.versions?.analysisVersion||'—')}
-
-          ·
-          prompt
-          ${escapeHtml(metadata?.promptVersion||'—')}
-
-        </div>
-
-
-        ${reportFooter(5)}
 
       </section>
 
@@ -9187,96 +3525,40 @@ function officialReportMarkup({
   `;
 }
 
-
-/* ==========================================================
-   CURRENT / RELEASED REPORT VIEW
-   ========================================================== */
-
-function reportPreview() {
-
-  const e =
-    employeeById(
-      state.reportEmployeeId
-    )
-    ||
-    employee();
-
-
-  if(
-    !e
-    ||
-    !state.report
-  ) {
-
-    return shell(
-      `
-      <div class="card empty">
-        No current report selected.
-      </div>
-      `,
-      'Report Preview'
-    );
-  }
-
+function reportPreview(){
+  const e=
+    empById(state.reportEmployeeId)||
+    currentEmployee();
 
   return shell(
-    officialReportMarkup({
-      e,
-
-      report:
-        state.report,
-
-      analytics:
-        state.reportAnalytics
-        ||
-        latestAnalytics(e),
-
-      comparisonData:
-        state.reportComparison,
-
-      metadata:
-        state.reportMetadata,
-
-      period:
-        state.reportPeriod,
-
-      status:
-        state.reportStatus,
-
-      version:
-        null,
-
-      releaseInfo:
-        null,
-
-      monthlyContextOverride:
-        getMonthlyContext(
+    e&&state.report
+      ?reportMarkup({
           e,
-          monthKeyFromDate(
-            state.reportPeriod.from
-          )
-        )
-    }),
-    'Official Report Preview'
+          report:state.report,
+          a:state.analytics,
+          meta:state.meta,
+          p:state.period,
+          status:state.reportStatus,
+          reviewer:state.reviewerName,
+          checked:humanChecked(),
+          unresolvedCount:unresolved()
+        })
+      :`
+        <div class="card empty">
+          No current report.
+        </div>
+      `,
+    'Fraud Screening Report'
   );
 }
 
-
-function releasedReportView() {
-
-  const r =
-    state.releasedReports.find(
-      x =>
-        x.id
-        ===
-        state.selectedReleaseId
+function releasedView(){
+  const r=
+    state.released.find(
+      x=>x.id===state.selectedReleaseId
     );
 
-
-  if(
-    !r
-  ) {
-
+  if(!r){
     return shell(
       `
       <div class="card empty">
@@ -9287,461 +3569,180 @@ function releasedReportView() {
     );
   }
 
-
-  /*
-    Always use snapshot identity/context
-    rather than the employee's current profile.
-    This keeps released reports immutable.
-  */
-
-  const e = {
-    id:
-      r.employeeId,
-
-    name:
-      r.employeeName,
-
-    role:
-      r.role,
-
-    employer:
-      r.employer,
-
-    baseline:
-      r.baseline
-      ||
-      {},
-
-    monthlyContexts:
-      {},
-
-    timezone:
-      r.baseline?.timezone
-      ||
-      '',
-
-    schedule:
-      r.baseline?.generalSchedule
-      ||
-      ''
+  const e={
+    id:r.employeeId,
+    name:r.employeeName,
+    employer:r.employer,
+    role:r.role,
+    timezone:r.timezone
   };
 
-
   return shell(
-    officialReportMarkup({
+    reportMarkup({
       e,
-
-      report:
-        r.report,
-
-      analytics:
-        r.analytics,
-
-      comparisonData:
-        r.comparison,
-
-      metadata:
-        r.metadata,
-
-      period:
-        r.period,
-
-      status:
-        'Released',
-
-      version:
-        r.version,
-
-      releaseInfo:
-        r,
-
-      monthlyContextOverride:
-        r.monthlyContext
-        ||
-        {}
+      report:r.report,
+      a:r.analytics,
+      meta:r.meta,
+      p:r.period,
+      status:'Released',
+      reviewer:r.reviewerName,
+      checked:r.humanChecked,
+      unresolvedCount:r.unresolved,
+      version:r.version,
+      released:true
     }),
     'Released Report'
   );
 }
 
-
-function markNotificationReadForReport(
-  reportId
-) {
-
-  let changed =
-    false;
-
+function viewRelease(id){
+  state.selectedReleaseId=id;
 
   state.notifications.forEach(
-    n => {
-
-      if(
-        n.reportId
-        ===
-        reportId
-        &&
-        !n.read
-      ) {
-
-        n.read =
-          true;
-
-
-        n.readAt =
-          new Date()
-            .toISOString();
-
-
-        changed =
-          true;
+    n=>{
+      if(n.reportId===id){
+        n.read=true;
       }
     }
   );
 
+  saveNotifications();
 
-  if(
-    changed
-  ) {
-
-    saveNotifications();
-  }
-}
-
-
-function viewReleasedReport(
-  id
-) {
-
-  state.selectedReleaseId =
-    id;
-
-
-  markNotificationReadForReport(
-    id
-  );
-
-
-  state.page =
-    'releasedReport';
-
+  state.page='releasedReport';
 
   render();
 }
 
-
-/* ==========================================================
-   APPROVE & RELEASE
-   ========================================================== */
-
-async function releaseCurrentReport() {
+async function releaseCurrent(){
+  const e=
+    empById(state.reportEmployeeId)||
+    currentEmployee();
 
   if(
-    state.reportStatus
-    ===
-    'Released'
-  ) {
-
+    !e||
+    !state.report||
+    state.reportStatus!=='Approved'
+  ){
     return;
   }
 
-
-  const e =
-    employeeById(
-      state.reportEmployeeId
-    )
-    ||
-    employee();
-
-
-  if(
-    !e
-    ||
-    !state.report
-  ) {
-
-    return;
-  }
-
-
-  try {
-
-    const res =
-      await fetch(
-        '/api/reports/release',
-        {
-          method:
-            'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify({
-              employeeId:
-                e.id,
-
-              employer:
-                e.employer,
-
-              period:
-                state.reportPeriod
-            })
-        }
-      );
-
-
-    const data =
-      await res.json();
-
-
-    const releaseId =
-      data.releaseId
-      ||
-      `wgm_${Date.now()}`;
-
-
-    const version =
-      nextReportVersion(
-        e.id,
-        state.reportPeriod
-      );
-
-
-    const ctx =
-      getMonthlyContext(
-        e,
-        monthKeyFromDate(
-          state.reportPeriod.from
-        )
-      );
-
-
-    const snapshot = {
-      id:
-        releaseId,
-
-      employeeId:
-        e.id,
-
-      employeeName:
-        e.name,
-
-      role:
-        e.role,
-
-      employer:
-        e.employer,
-
-      period:
-        deepClone(
-          state.reportPeriod
-        ),
-
-      version,
-
-      report:
-        deepClone(
-          state.report
-        ),
-
-      analytics:
-        deepClone(
-          state.reportAnalytics
-          ||
-          latestAnalytics(e)
-        ),
-
-      comparison:
-        deepClone(
-          state.reportComparison
-          ||
-          {
-            available:
-              false
-          }
-        ),
-
-      metadata:
-        deepClone(
-          state.reportMetadata
-          ||
-          {}
-        ),
-
-      baseline:
-        deepClone(
-          e.baseline
-          ||
-          {}
-        ),
-
-      monthlyContext:
-        deepClone(ctx),
-
-      reviewer:
-        'White Glove Reviewer',
-
-      approvedAt:
-        new Date()
-          .toISOString(),
-
-      releasedAt:
-        data.releasedAt
-        ||
-        new Date()
-          .toISOString(),
-
-      status:
-        'Released'
-    };
-
-
-    state.releasedReports.push(
-      snapshot
+  try{
+    const res=await fetch(
+      '/api/reports/release',
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          employeeId:e.id,
+          employer:e.employer,
+          period:state.period
+        })
+      }
     );
 
+    const d=await res.json();
 
-    saveReleasedReports();
+    const id=
+      d.releaseId||
+      `wgm_${Date.now()}`;
 
+    const version=
+      nextVersion(
+        e.id,
+        state.period
+      );
+
+    const snap={
+      id,
+      employeeId:e.id,
+      employeeName:e.name,
+      employer:e.employer,
+      role:e.role||'Virtual Assistant',
+      timezone:timezone(e),
+      period:
+        JSON.parse(
+          JSON.stringify(state.period)
+        ),
+      version,
+      report:
+        JSON.parse(
+          JSON.stringify(state.report)
+        ),
+      analytics:
+        JSON.parse(
+          JSON.stringify(state.analytics)
+        ),
+      meta:
+        JSON.parse(
+          JSON.stringify(state.meta||{})
+        ),
+      reviewerName:
+        state.reviewerName,
+      humanChecked:
+        humanChecked(),
+      unresolved:
+        unresolved(),
+      releasedAt:
+        d.releasedAt||
+        new Date().toISOString(),
+      status:'Released'
+    };
+
+    state.released.push(snap);
+
+    saveReleased();
 
     state.notifications.push({
-      id:
-        `notice_${releaseId}`,
-
-      employer:
-        e.employer,
-
-      employeeId:
-        e.id,
-
-      reportId:
-        releaseId,
-
-      type:
-        'report_released',
-
+      id:`notice_${id}`,
+      employer:e.employer,
+      employeeId:e.id,
+      reportId:id,
       title:
-        `${periodLabel(state.reportPeriod)} Monthly Accountability Report — ${e.name}`,
-
+        `${month(state.period.from)} Fraud Screening & Activity Review — ${e.name}`,
       message:
-        `White Glove has completed its review and released the ${periodLabel(state.reportPeriod)} report for ${e.name}.`,
-
-      read:
-        false,
-
-      createdAt:
-        snapshot.releasedAt
+        `White Glove has completed human review and released the ${month(state.period.from)} screening report for ${e.name}.`,
+      read:false,
+      createdAt:snap.releasedAt
     });
-
 
     saveNotifications();
 
+    state.reportStatus='Released';
 
-    state.reportStatus =
-      'Released';
-
-
-    e.reportingStatus =
-      'Released';
-
+    e.reportingStatus='Released';
 
     saveEmployees();
 
-
-    state.deliveryQueue.push({
-      employeeId:
-        e.id,
-
-      employer:
-        e.employer,
-
-      reportId:
-        releaseId,
-
-      status:
-        'queued'
-    });
-
-
     render();
-
 
     toast(
       'Report released. Employer notification created.'
     );
 
-
-  } catch(err) {
-
+  }catch(err){
     toast(
       `Could not release report: ${err.message}`
     );
   }
 }
 
-
-/* ==========================================================
-   DATA SOURCES
-   ========================================================== */
-
-function connectionTypeLabel(
-  c
-) {
-
-  return c.type === 'dedicated'
-    ? 'Dedicated Employer'
-    : 'WGH Shared';
-}
-
-
-function connectionEmployeeCount(
-  id
-) {
-
-  return state.employees.filter(
-    e =>
-      String(e.connectionId)
-      ===
-      String(id)
-  )
-  .length;
-}
-
-
-function dataSources() {
-
-  const cs =
+function dataSources(){
+  const cs=
     state.connections.length
-
-      ? state.connections
-
-      : [
-          {
-            id:
-              'wgh-main',
-
-            name:
-              'WGH Main Scrin Account',
-
-            provider:
-              'scrin',
-
-            type:
-              'shared',
-
-            employer:
-              '',
-
-            status:
-              state.mode === 'LIVE'
-                ? 'connected'
-                : 'configured'
-          }
-        ];
-
+      ?state.connections
+      :[
+        {
+          id:'wgh-main',
+          name:'WGH Main Scrin Account',
+          type:'shared',
+          status:
+            state.mode==='LIVE'
+              ?'connected'
+              :'configured'
+        }
+      ];
 
   return shell(
     `
@@ -9749,147 +3750,69 @@ function dataSources() {
 
       <div>
 
-        <h2>
-          Data Sources
-        </h2>
+        <h2>Data Sources</h2>
 
         <p>
-
-          Each Scrin credential
-          is a separate WGM connection
-          with explicit employer ownership.
-
+          Scrin is the current capture provider.
         </p>
 
       </div>
 
-
-      <div class="actions">
-
-        <button
-          class="btn"
-          id="refreshConnections"
-        >
-          Refresh
-        </button>
-
-        <button
-          class="btn primary"
-          id="toggleAddConnection"
-        >
-          + Add Scrin Connection
-        </button>
-
-      </div>
+      <button
+        class="btn"
+        id="refreshConnections"
+      >
+        Refresh
+      </button>
 
     </div>
-
-
-    ${
-      state.showAddConnection
-
-        ? `
-          <div
-            class="card panel"
-            style="margin-bottom:16px"
-          >
-
-            <div class="panel-title">
-              Add Scrin Connection
-            </div>
-
-            <div class="panel-sub">
-
-              Prototype flow only.
-
-              API credentials remain server-side.
-
-            </div>
-
-          </div>
-          `
-
-        : ''
-    }
-
 
     <div class="card panel">
 
       <table>
 
         <thead>
-
           <tr>
             <th>Connection</th>
             <th>Type</th>
-            <th>Employer ownership</th>
-            <th>Employees</th>
             <th>Status</th>
           </tr>
-
         </thead>
-
 
         <tbody>
 
           ${
             cs.map(
-              c => `
-              <tr>
+              c=>`
+                <tr>
 
-                <td>
+                  <td>
+                    ${esc(c.name||c.id)}
+                  </td>
 
-                  <b>
-                    ${escapeHtml(c.name||c.id)}
-                  </b>
+                  <td>
+                    ${
+                      c.type==='dedicated'
+                        ?'Dedicated Employer'
+                        :'WGH Shared'
+                    }
+                  </td>
 
-                  <div class="small">
-                    ${escapeHtml(c.id)}
-                  </div>
+                  <td>
 
-                </td>
+                    <span
+                      class="status ${statusCls(c.status||'configured')}"
+                    >
 
-                <td>
-                  ${connectionTypeLabel(c)}
-                </td>
+                      <span class="dot"></span>
 
-                <td>
+                      ${esc(c.status||'configured')}
 
-                  ${
-                    c.type === 'dedicated'
+                    </span>
 
-                      ? escapeHtml(c.employer||'Employer required')
+                  </td>
 
-                      : 'Employee-level mapping'
-                  }
-
-                </td>
-
-                <td>
-
-                  ${
-                    c.employeeCount
-                    ??
-                    connectionEmployeeCount(c.id)
-                  }
-
-                </td>
-
-                <td>
-
-                  <span
-                    class="status ${statusClass(c.status||'configured')}"
-                  >
-
-                    <span class="dot"></span>
-
-                    ${escapeHtml(c.status||'configured')}
-
-                  </span>
-
-                </td>
-
-              </tr>
+                </tr>
               `
             ).join('')
           }
@@ -9897,7 +3820,6 @@ function dataSources() {
         </tbody>
 
       </table>
-
 
       <div
         class="actions"
@@ -9914,91 +3836,28 @@ function dataSources() {
       </div>
 
     </div>
-
-
-    <div
-      class="card panel"
-      style="margin-top:16px"
-    >
-
-      <div class="panel-title">
-        Provider-independent architecture
-      </div>
-
-
-      <div class="banner">
-
-        <div>
-
-          <div
-            class="big"
-            style="font-size:18px"
-          >
-
-            Scrin
-            →
-            WGM Evidence Layer
-            →
-            Period Analytics
-            →
-            Selected Visual Review
-            →
-            Official Report
-            →
-            Human Approval
-            →
-            Employer Release
-
-          </div>
-
-          <div class="muted">
-
-            Future WGM Native Monitor
-            plugs into the same evidence
-            and reporting layer.
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </div>
     `,
     'Data Sources'
   );
 }
 
-
-/* ==========================================================
-   SETTINGS / MAPPINGS
-   ========================================================== */
-
-function settings() {
-
+function settings(){
   return shell(
     `
     <div class="header-row">
 
       <div>
 
-        <h2>
-          Settings & Integrations
-        </h2>
+        <h2>Settings</h2>
 
         <p>
-
-          Map shared Scrin employees carefully.
-
-          Dedicated-connection employees
-          remain employer-locked.
-
+          Map each active Scrin employee
+          to the correct employer.
         </p>
 
       </div>
 
     </div>
-
 
     <div class="grid two-col">
 
@@ -10008,68 +3867,44 @@ function settings() {
           Scrin API v2
         </div>
 
-        <p class="small">
+        <button
+          class="btn primary"
+          id="syncScrin"
+        >
+          Sync connections
+        </button>
 
-          API credentials stay
-          in Cloudflare secrets
-          and never enter browser code.
-
-        </p>
-
-
-        <div class="actions">
-
-          <button
-            class="btn primary"
-            id="syncScrin"
-          >
-            Sync all connections
-          </button>
-
-          <button
-            class="btn"
-            id="testScrin"
-          >
-            Test connections
-          </button>
-
-        </div>
-
+        <button
+          class="btn"
+          id="testScrin"
+        >
+          Test
+        </button>
 
         <div
-          id="scrinResult"
           class="small"
           style="margin-top:10px"
         >
-          ${escapeHtml(state.syncMessage)}
+          ${esc(state.syncMessage)}
         </div>
 
       </div>
 
-
       <div class="card panel">
 
         <div class="panel-title">
-          Official Report Engine
+          Report Engine
         </div>
 
         <p class="small">
-
-          Permanent baseline
-          + monthly context
-          + WGM calculations
-          + selected screenshot vision review
-          + fixed five-page template
-          + human approval.
-
+          Fixed Fraud Screening & Activity Review template.
         </p>
-
 
         <span class="status green">
 
           <span class="dot"></span>
 
-          wgm-official-report-prompt-2.0
+          wgm-fraud-screening-1.0
 
         </span>
 
@@ -10077,16 +3912,10 @@ function settings() {
 
     </div>
 
-
     <div
       class="card panel"
       style="margin-top:16px"
     >
-
-      <div class="panel-title">
-        Source employee → WGM employer mapping
-      </div>
-
 
       <table>
 
@@ -10094,104 +3923,76 @@ function settings() {
 
           <tr>
             <th>Employee</th>
-            <th>Connection</th>
-            <th>Type</th>
-            <th>Employment ID</th>
-            <th>WGM employer</th>
+            <th>Employer</th>
             <th>Exclude</th>
-            <th>Base expected hours</th>
+            <th>Expected hours</th>
           </tr>
 
         </thead>
-
 
         <tbody>
 
           ${
             state.employees.map(
-              e => `
-              <tr>
+              e=>`
+                <tr>
 
-                <td>
-                  ${escapeHtml(e.name)}
-                </td>
+                  <td>
+                    ${esc(e.name)}
+                  </td>
 
-                <td>
-                  ${escapeHtml(e.connectionName||'Scrin')}
-                </td>
+                  <td>
 
-                <td>
-                  ${e.employerLocked?'Dedicated':'Shared'}
-                </td>
-
-                <td>
-                  ${escapeHtml(e.employmentId||'—')}
-                </td>
-
-                <td>
-
-                  ${
-                    e.employerLocked
-
-                      ? `
-                        <input
-                          class="map-input"
-                          value="${escapeHtml(e.employer||e.connectionEmployer||'')}"
-                          disabled
-                        >
+                    ${
+                      e.employerLocked
+                        ?`
+                          <input
+                            class="map-input"
+                            value="${esc(e.employer||e.connectionEmployer||'')}"
+                            disabled
+                          >
                         `
-
-                      : `
-                        <input
-                          class="map-input"
-                          data-map-employer="${escapeHtml(e.id)}"
-                          value="${escapeHtml(e.employer||'')}"
-                        >
+                        :`
+                          <input
+                            class="map-input"
+                            data-map-employer="${esc(e.id)}"
+                            value="${esc(e.employer||'')}"
+                          >
                         `
-                  }
+                    }
 
-                </td>
+                  </td>
 
-                <td>
+                  <td>
 
-                  ${
-                    e.employerLocked
-
-                      ? `
-                        <span class="small">
-                          N/A
-                        </span>
+                    ${
+                      e.employerLocked
+                        ?'N/A'
+                        :`
+                          <input
+                            type="checkbox"
+                            data-map-excluded="${esc(e.id)}"
+                            ${e.excluded?'checked':''}
+                          >
                         `
+                    }
 
-                      : `
-                        <input
-                          type="checkbox"
-                          data-map-excluded="${escapeHtml(e.id)}"
-                          ${
-                            e.excluded
-                              ? 'checked'
-                              : ''
-                          }
-                        >
-                        `
-                  }
+                  </td>
 
-                </td>
+                  <td>
 
-                <td>
+                    <input
+                      class="map-input"
+                      data-map-hours="${esc(e.id)}"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value="${Number(e.expectedHours||0)}"
+                    >
 
-                  <input
-                    class="map-input small-input"
-                    data-map-hours="${escapeHtml(e.id)}"
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value="${Number(e.expectedHours||0)}"
-                  >
+                  </td>
 
-                </td>
-
-              </tr>
+                </tr>
               `
             ).join('')
           }
@@ -10200,20 +4001,13 @@ function settings() {
 
       </table>
 
-
-      <div
-        class="actions"
+      <button
+        class="btn gold"
+        id="saveMappings"
         style="margin-top:16px"
       >
-
-        <button
-          class="btn gold"
-          id="saveMappings"
-        >
-          Validate & Save mappings
-        </button>
-
-      </div>
+        Save mappings
+      </button>
 
     </div>
     `,
@@ -10221,1666 +4015,672 @@ function settings() {
   );
 }
 
-
-function saveMappings() {
-
+function saveMappings(){
   document
-    .querySelectorAll(
-      '[data-map-employer]'
-    )
+    .querySelectorAll('[data-map-employer]')
     .forEach(
-      el => {
+      x=>{
+        const e=empById(x.dataset.mapEmployer);
 
-        const e =
-          employeeById(
-            el.dataset.mapEmployer
-          );
-
-
-        if(
-          e
-          &&
-          !e.employerLocked
-        ) {
-
-          e.employer =
-            el.value.trim();
+        if(e&&!e.employerLocked){
+          e.employer=x.value.trim();
         }
       }
     );
 
-
   document
-    .querySelectorAll(
-      '[data-map-excluded]'
-    )
+    .querySelectorAll('[data-map-excluded]')
     .forEach(
-      el => {
+      x=>{
+        const e=empById(x.dataset.mapExcluded);
 
-        const e =
-          employeeById(
-            el.dataset.mapExcluded
-          );
-
-
-        if(
-          e
-          &&
-          !e.employerLocked
-        ) {
-
-          e.excluded =
-            el.checked;
+        if(e&&!e.employerLocked){
+          e.excluded=x.checked;
         }
       }
     );
 
-
   document
-    .querySelectorAll(
-      '[data-map-hours]'
-    )
+    .querySelectorAll('[data-map-hours]')
     .forEach(
-      el => {
+      x=>{
+        const e=empById(x.dataset.mapHours);
 
-        const e =
-          employeeById(
-            el.dataset.mapHours
-          );
-
-
-        if(
-          e
-        ) {
-
-          e.expectedHours =
-            Number(
-              el.value
-              ||
-              0
-            );
+        if(e){
+          e.expectedHours=
+            Number(x.value||0);
         }
       }
     );
-
 
   state.employees.forEach(
-    e => {
-
-      if(
-        e.employerLocked
-      ) {
-
-        e.employer =
-          e.connectionEmployer
-          ||
+    e=>{
+      if(e.employerLocked){
+        e.employer=
+          e.connectionEmployer||
           e.employer;
 
-
-        e.excluded =
-          false;
+        e.excluded=false;
       }
-
-
-      ensureEmployeeShape(e);
-
-
-      e.baseline.clientCompany =
-        e.employer
-        ||
-        e.baseline.clientCompany;
     }
   );
 
-
-  const invalid =
-    state.employees.filter(
-      e =>
-        !e.excluded
-        &&
-        !e.employerLocked
-        &&
-        !String(
-          e.employer
-          ||
-          ''
-        )
-        .trim()
-    );
-
-
   saveEmployees();
 
+  const bad=
+    state.employees.filter(
+      e=>
+        !e.excluded&&
+        !String(e.employer||'').trim()
+    );
 
-  if(
-    invalid.length
-  ) {
-
+  if(bad.length){
     toast(
-      `${invalid.length} shared-connection employee(s) still need an employer or exclusion.`
+      `${bad.length} active employee(s) need an employer mapping.`
     );
 
     return;
   }
 
+  ensureEmployer();
 
-  ensureEmployerSelection();
-
-
-  toast(
-    'Employer mappings validated and saved.'
-  );
+  toast('Mappings saved.');
 }
 
-
-/* ==========================================================
-   BILLING
-   ========================================================== */
-
-function subscriptions() {
-
-  if(
-    state.role === 'employer'
-  ) {
-
-    const team =
-      portalEmployees();
-
-
-    return shell(
-      `
-      <div class="header-row">
-
-        <div>
-
-          <h2>
-            Billing
-          </h2>
-
-          <p>
-            Prototype of the Stripe-backed customer billing entry point.
-          </p>
-
-        </div>
-
-
-        <button class="btn primary">
-          Manage payment method
-        </button>
-
-      </div>
-
-
-      <div class="grid metrics">
-
-        ${
-          metric(
-            'Plan',
-            'WGM Monthly',
-            'Configurable in Stripe'
-          )
-        }
-
-        ${
-          metric(
-            'Paid seats',
-            Math.max(team.length,1),
-            'Contracted capacity'
-          )
-        }
-
-        ${
-          metric(
-            'Billing status',
-            'Active',
-            'Prototype state'
-          )
-        }
-
-        ${
-          metric(
-            'Released reports',
-            employerReleasedReports(state.portalEmployer).length,
-            'Report history'
-          )
-        }
-
-      </div>
-      `,
-      'Billing'
-    );
-  }
-
-
-  return shell(
-    `
-    <div class="header-row">
-
-      <div>
-
-        <h2>
-          Subscriptions
-        </h2>
-
-        <p>
-          Prototype states for included WGH seats and standalone paid organizations.
-        </p>
-
-      </div>
-
-    </div>
-
-
-    <div class="card panel">
-
-      <table>
-
-        <thead>
-
-          <tr>
-            <th>Company</th>
-            <th>Entitlement</th>
-            <th>Seats</th>
-            <th>Lifecycle state</th>
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          ${
-            mappedEmployers().map(
-              (c, i) => `
-              <tr>
-
-                <td>
-                  ${escapeHtml(c)}
-                </td>
-
-                <td>
-                  ${i===0?'WGH Included':'Standalone Paid'}
-                </td>
-
-                <td>
-                  ${activeEmployees().filter(e=>e.employer===c).length}
-                </td>
-
-                <td>
-
-                  <span class="status green">
-
-                    <span class="dot"></span>
-
-                    Active
-
-                  </span>
-
-                </td>
-
-              </tr>
-              `
-            ).join('')
-          }
-
-        </tbody>
-
-      </table>
-
-    </div>
-    `,
-    'Subscriptions'
-  );
-}
-
-
-/* ==========================================================
-   SCRIN SYNC
-   ========================================================== */
-
-function mergeSyncedEmployee(
-  x,
-  prior
-) {
-
-  const old =
+function mergeEmployee(x,prior){
+  const old=
     prior.find(
-      o =>
-        String(o.id)
-        ===
-        String(x.id)
-    )
+      o=>String(o.id)===String(x.id)
+    )||{};
 
-    ||
-
-    prior.find(
-      o =>
-        String(o.employmentId)
-        ===
-        String(x.employmentId)
-        &&
-        (
-          !o.connectionId
-          ||
-          String(o.connectionId)
-          ===
-          String(x.connectionId)
-        )
-    )
-
-    ||
-
-    {};
-
-
-  const dedicated =
+  const ded=
     x.employerLocked
+      ?(
+        x.connectionEmployer||
+        x.employer||
+        ''
+      )
+      :null;
 
-      ? (
-          x.connectionEmployer
-          ||
-          x.employer
-          ||
-          ''
-        )
-
-      : null;
-
-
-  return ensureEmployeeShape({
+  return {
     ...old,
     ...x,
-
     id:
-      x.id
-      ||
+      x.id||
       `${x.connectionId||'scrin'}::${x.employmentId}`,
-
     initials:
-      initials(x.name),
-
+      ini(x.name),
     employer:
-      dedicated !== null
-
-        ? dedicated
-
-        : (
-            old.employer
-            ||
-            x.employer
-            ||
-            ''
-          ),
-
+      ded!==null
+        ?ded
+        :(
+          old.employer||
+          x.employer||
+          ''
+        ),
     excluded:
       x.employerLocked
-
-        ? false
-
-        : Boolean(
-            old.excluded
-          ),
-
+        ?false
+        :Boolean(old.excluded),
     expectedHours:
       Number(
-        old.expectedHours
-        ??
-        x.expectedHours
-        ??
+        old.expectedHours??
+        x.expectedHours??
         160
       ),
-
-    schedule:
-      old.schedule
-      ||
-      x.schedule
-      ||
-      'Monday–Friday · 8 hours/day · 40 hours/week',
-
     timezone:
-      old.timezone
-      ||
-      x.timezone
-      ||
-      '',
-
+      old.timezone||
+      x.timezone||
+      'Employee timezone',
     timezoneOffsetMinutes:
       Number(
-        old.timezoneOffsetMinutes
-        ??
-        x.timezoneOffsetMinutes
-        ??
+        old.timezoneOffsetMinutes??
+        x.timezoneOffsetMinutes??
         0
       ),
-
-    context:
-      old.context
-      ||
-      '',
-
-    trackedHours:
-      Number(
-        old.trackedHours
-        ??
-        0
-      ),
-
-    activeDays:
-      Number(
-        old.activeDays
-        ??
-        0
-      ),
-
-    workstreams:
-      old.workstreams
-      ||
-      [],
-
-    apps:
-      old.apps
-      ||
-      [],
-
-    weeks:
-      old.weeks
-      ||
-      [],
-
     shots:
-      old.shots
-      ||
-      [],
-
+      old.shots||[],
     daySummary:
-      old.daySummary
-      ||
-      null,
-
-    baseline:
-      old.baseline
-      ||
-      null,
-
-    monthlyContexts:
-      old.monthlyContexts
-      ||
-      {},
-
-    monitoringPolicy:
-      old.monitoringPolicy
-      ||
-      defaultMonitoringPolicy(),
-
+      old.daySummary||null,
     lastAnalytics:
-      old.lastAnalytics
-      ||
-      null,
-
+      old.lastAnalytics||null,
     reportingStatus:
-      old.reportingStatus
-      ||
-      x.reportingStatus
-      ||
+      old.reportingStatus||
+      x.reportingStatus||
       'Synced'
-  });
+  };
 }
 
-
-async function syncScrin() {
-
-  state.syncMessage =
-    'Syncing all Scrin connections…';
-
+async function syncScrin(){
+  state.syncMessage='Syncing…';
 
   render();
 
+  try{
+    const r=await fetch(
+      '/api/scrin/all-common',
+      {
+        method:'POST'
+      }
+    );
 
-  try {
+    const d=await r.json();
 
-    const r =
-      await fetch(
-        '/api/scrin/all-common',
-        {
-          method:
-            'POST'
-        }
-      );
-
-
-    const j =
-      await r.json();
-
-
-    if(
-      !r.ok
-    ) {
-
-      throw new Error(
-        j.error
-        ||
-        'Scrin sync failed'
+    if(!r.ok){
+      throw Error(
+        d.error||
+        'Sync failed'
       );
     }
 
+    const prior=[
+      ...state.employees
+    ];
 
-    const prior =
-      [
-        ...state.employees
-      ];
+    state.connections=
+      Array.isArray(d.connections)
+        ?d.connections
+        :state.connections;
 
-
-    state.connections =
-      Array.isArray(
-        j.connections
-      )
-
-        ? j.connections
-
-        : state.connections;
-
-
-    state.employees =
+    state.employees=
       (
-        Array.isArray(
-          j.employees
-        )
-
-          ? j.employees
-
-          : []
-      )
-      .map(
-        x =>
-          mergeSyncedEmployee(
-            x,
-            prior
-          )
+        Array.isArray(d.employees)
+          ?d.employees
+          :[]
+      ).map(
+        x=>mergeEmployee(x,prior)
       );
 
-
-    if(
-      !state.employees.length
-    ) {
-
-      throw new Error(
-        'No employment records were returned'
+    if(!state.employees.length){
+      throw Error(
+        'No employment records returned'
       );
     }
-
 
     if(
       !state.employees.some(
-        e =>
-          String(e.id)
-          ===
-          String(
-            state.selectedEmployeeId
-          )
+        e=>String(e.id)===String(state.selectedEmployeeId)
       )
-    ) {
-
-      state.selectedEmployeeId =
-        activeEmployees()[0]?.id
-        ||
+    ){
+      state.selectedEmployeeId=
+        active()[0]?.id||
         state.employees[0].id;
     }
 
-
     saveEmployees();
-
     saveConnections();
 
+    state.mode=
+      d.demo
+        ?'DEMO'
+        :'LIVE';
 
-    state.mode =
-      j.demo
-        ? 'DEMO'
-        : 'LIVE';
+    state.syncMessage=
+      `${state.employees.length} employment record(s) loaded from ${state.connections.length} connection(s).`;
 
-
-    const errors =
-      Array.isArray(
-        j.errors
-      )
-
-        ? j.errors.length
-
-        : 0;
-
-
-    const connected =
-      state.connections.filter(
-        c =>
-          c.status === 'connected'
-          ||
-          c.status === 'demo'
-      )
-      .length;
-
-
-    state.syncMessage =
-      (
-        `Connected ${connected}/${state.connections.length} Scrin connection(s). `
-        +
-        `${state.employees.length} employment record(s) loaded.`
-        +
-        (
-          errors
-            ? ` ${errors} connection error(s).`
-            : ''
-        )
-      );
-
-
-  } catch(err) {
-
-    state.syncMessage =
-      `Connection sync failed: ${err.message}`;
+  }catch(err){
+    state.syncMessage=
+      `Sync failed: ${err.message}`;
   }
-
 
   render();
 }
 
+async function refreshConnections(){
+  try{
+    const r=await fetch(
+      '/api/scrin/connections'
+    );
 
-async function refreshConnections() {
+    const d=await r.json();
 
-  try {
-
-    const r =
-      await fetch(
-        '/api/scrin/connections'
-      );
-
-
-    const j =
-      await r.json();
-
-
-    if(
-      !r.ok
-    ) {
-
-      throw new Error(
-        j.error
-        ||
-        'Could not load connections'
+    if(!r.ok){
+      throw Error(
+        d.error||
+        'Could not load'
       );
     }
 
-
-    state.connections =
-      Array.isArray(
-        j.connections
-      )
-
-        ? j.connections
-
-        : [];
-
+    state.connections=
+      Array.isArray(d.connections)
+        ?d.connections
+        :[];
 
     saveConnections();
 
-
     toast(
-      `${state.connections.length} Scrin connection(s) configured.`
+      `${state.connections.length} connection(s) configured.`
     );
 
-
-  } catch(err) {
-
+  }catch(err){
     toast(
-      `Could not refresh connections: ${err.message}`
+      `Could not refresh: ${err.message}`
     );
   }
 }
 
-
-async function testScrin() {
-
-  const el =
-    document.getElementById(
-      'scrinResult'
+async function testScrin(){
+  try{
+    const r=await fetch(
+      '/api/scrin/all-common',
+      {
+        method:'POST'
+      }
     );
 
+    const d=await r.json();
 
-  if(
-    el
-  ) {
-
-    el.textContent =
-      'Testing all connections…';
-  }
-
-
-  try {
-
-    const r =
-      await fetch(
-        '/api/scrin/all-common',
-        {
-          method:
-            'POST'
-        }
-      );
-
-
-    const j =
-      await r.json();
-
-
-    if(
-      !r.ok
-    ) {
-
-      throw new Error(
-        j.error
-        ||
+    if(!r.ok){
+      throw Error(
+        d.error||
         'Not configured'
       );
     }
 
+    state.mode=
+      d.demo
+        ?'DEMO'
+        :'LIVE';
 
-    state.mode =
-      j.demo
-        ? 'DEMO'
-        : 'LIVE';
+    toast(
+      `${d.employees?.length||0} employment record(s) available.`
+    );
 
-
-    state.connections =
-      Array.isArray(
-        j.connections
-      )
-
-        ? j.connections
-
-        : state.connections;
-
-
-    saveConnections();
-
-
-    const connected =
-      state.connections.filter(
-        c =>
-          c.status === 'connected'
-          ||
-          c.status === 'demo'
-      )
-      .length;
-
-
-    state.syncMessage =
-      (
-        `${state.mode} connections responding: `
-        +
-        `${connected}/${state.connections.length}. `
-        +
-        `${j.employees?.length||0} employment record(s) available.`
-      );
-
-
-    render();
-
-
-  } catch(err) {
-
-    if(
-      el
-    ) {
-
-      el.textContent =
-        `Not connected: ${err.message}`;
-    }
+  }catch(err){
+    toast(
+      `Connection test failed: ${err.message}`
+    );
   }
 }
 
+function render(){
+  let o='';
 
-/* ==========================================================
-   RENDER
-   ========================================================== */
-
-function render() {
-
-  let out =
-    '';
-
-
-  if(
-    state.page === 'dashboard'
-  ) {
-
-    out =
-      dashboard();
+  if(state.page==='dashboard'){
+    o=dashboard();
+  }else if(state.page==='employees'){
+    o=employees();
+  }else if(state.page==='monitoring'){
+    o=monitoring();
+  }else if(state.page==='reports'){
+    o=reports();
+  }else if(state.page==='review'){
+    o=review();
+  }else if(state.page==='dataSources'){
+    o=dataSources();
+  }else if(state.page==='settings'){
+    o=settings();
+  }else if(state.page==='reportPreview'){
+    o=reportPreview();
+  }else if(state.page==='releasedReport'){
+    o=releasedView();
   }
-
-  else if(
-    state.page === 'companies'
-  ) {
-
-    out =
-      companies();
-  }
-
-  else if(
-    state.page === 'employees'
-  ) {
-
-    out =
-      employees();
-  }
-
-  else if(
-    state.page === 'monitoring'
-  ) {
-
-    out =
-      monitoring();
-  }
-
-  else if(
-    state.page === 'reports'
-  ) {
-
-    out =
-      reports();
-  }
-
-  else if(
-    state.page === 'review'
-  ) {
-
-    out =
-      review();
-  }
-
-  else if(
-    state.page === 'subscriptions'
-  ) {
-
-    out =
-      subscriptions();
-  }
-
-  else if(
-    state.page === 'dataSources'
-  ) {
-
-    out =
-      dataSources();
-  }
-
-  else if(
-    state.page === 'settings'
-  ) {
-
-    out =
-      settings();
-  }
-
-  else if(
-    state.page === 'reportPreview'
-  ) {
-
-    out =
-      reportPreview();
-  }
-
-  else if(
-    state.page === 'releasedReport'
-  ) {
-
-    out =
-      releasedReportView();
-  }
-
 
   document
     .getElementById('app')
-    .innerHTML =
-      out;
-
+    .innerHTML=o;
 
   bind();
 }
 
-
-/* ==========================================================
-   EVENTS
-   ========================================================== */
-
-function bind() {
-
+function bind(){
   document
     .querySelectorAll('[data-page]')
     .forEach(
-      x => {
-
-        x.onclick =
-          () => {
-
-            state.page =
-              x.dataset.page;
-
-            render();
-          };
-      }
+      x=>
+        x.onclick=()=>{
+          state.page=x.dataset.page;
+          render();
+        }
     );
-
 
   document
     .querySelectorAll('[data-open-id]')
     .forEach(
-      x => {
+      x=>
+        x.onclick=()=>{
+          const e=empById(x.dataset.openId);
 
-        x.onclick =
-          () => {
+          if(
+            state.role==='employer'&&
+            e?.employer!==state.portalEmployer
+          ){
+            toast(
+              'Employee is outside this employer portal.'
+            );
 
-            const target =
-              employeeById(
-                x.dataset.openId
-              );
+            return;
+          }
 
+          state.selectedEmployeeId=x.dataset.openId;
+          state.page='monitoring';
+          state.tab='overview';
 
-            if(
-              state.role === 'employer'
-              &&
-              target?.employer
-              !==
-              state.portalEmployer
-            ) {
-
-              toast(
-                'That employee is outside this employer portal.'
-              );
-
-              return;
-            }
-
-
-            state.selectedEmployeeId =
-              x.dataset.openId;
-
-
-            state.page =
-              'monitoring';
-
-
-            state.employeeTab =
-              'overview';
-
-
-            render();
-          };
-      }
+          render();
+        }
     );
-
 
   document
     .querySelectorAll('[data-tab]')
     .forEach(
-      x => {
-
-        x.onclick =
-          () => {
-
-            state.employeeTab =
-              x.dataset.tab;
-
-            render();
-          };
-      }
+      x=>
+        x.onclick=()=>{
+          state.tab=x.dataset.tab;
+          render();
+        }
     );
-
 
   document
     .querySelectorAll('[data-view-release]')
     .forEach(
-      x => {
-
-        x.onclick =
-          () =>
-            viewReleasedReport(
-              x.dataset.viewRelease
-            );
-      }
+      x=>
+        x.onclick=()=>
+          viewRelease(
+            x.dataset.viewRelease
+          )
     );
-
-
-  document
-    .querySelectorAll('[data-open-baseline]')
-    .forEach(
-      x => {
-
-        x.onclick =
-          () => {
-
-            state.selectedEmployeeId =
-              x.dataset.openBaseline;
-
-
-            state.page =
-              'monitoring';
-
-
-            state.employeeTab =
-              'baseline';
-
-
-            render();
-          };
-      }
-    );
-
-
-  const role =
-    document.getElementById(
-      'roleSwitcher'
-    );
-
-
-  if(
-    role
-  ) {
-
-    role.onchange =
-      () =>
-        setRole(
-          role.value
-        );
-  }
-
-
-  const emp =
-    document.getElementById(
-      'employerSwitcher'
-    );
-
-
-  if(
-    emp
-  ) {
-
-    emp.onchange =
-      () => {
-
-        state.portalEmployer =
-          emp.value;
-
-
-        localStorage.setItem(
-          'wgmPortalEmployer',
-          state.portalEmployer
-        );
-
-
-        const team =
-          portalEmployees();
-
-
-        state.selectedEmployeeId =
-          team[0]?.id
-          ||
-          '';
-
-
-        render();
-      };
-  }
-
-
-  const sync =
-    document.getElementById(
-      'syncScrin'
-    );
-
-
-  if(
-    sync
-  ) {
-
-    sync.onclick =
-      syncScrin;
-  }
-
-
-  const test =
-    document.getElementById(
-      'testScrin'
-    );
-
-
-  if(
-    test
-  ) {
-
-    test.onclick =
-      testScrin;
-  }
-
-
-  const refresh =
-    document.getElementById(
-      'refreshConnections'
-    );
-
-
-  if(
-    refresh
-  ) {
-
-    refresh.onclick =
-      refreshConnections;
-  }
-
-
-  const add =
-    document.getElementById(
-      'toggleAddConnection'
-    );
-
-
-  if(
-    add
-  ) {
-
-    add.onclick =
-      () => {
-
-        state.showAddConnection =
-          !state.showAddConnection;
-
-
-        render();
-      };
-  }
-
-
-  const mappings =
-    document.getElementById(
-      'saveMappings'
-    );
-
-
-  if(
-    mappings
-  ) {
-
-    mappings.onclick =
-      saveMappings;
-  }
-
-
-  const saveBase =
-    document.getElementById(
-      'saveBaseline'
-    );
-
-
-  if(
-    saveBase
-  ) {
-
-    saveBase.onclick =
-      saveBaseline;
-  }
-
-
-  const saveCtx =
-    document.getElementById(
-      'saveMonthlyContext'
-    );
-
-
-  if(
-    saveCtx
-  ) {
-
-    saveCtx.onclick =
-      saveMonthlyContext;
-  }
-
-
-  [
-    'ctxExpectedHours',
-    'ctxPTO',
-    'ctxSick',
-    'ctxHoliday',
-    'ctxClientOff',
-    'ctxReduction',
-    'ctxAdditional'
-  ]
-  .forEach(
-    id => {
-
-      const el =
-        document.getElementById(id);
-
-
-      if(
-        el
-      ) {
-
-        el.oninput =
-          updateAdjustedExpectedDisplay;
-
-
-        el.onchange =
-          updateAdjustedExpectedDisplay;
-      }
-    }
-  );
-
-
-  const day =
-    document.getElementById(
-      'loadLiveDay'
-    );
-
-
-  if(
-    day
-  ) {
-
-    day.onclick =
-      loadLiveDay;
-  }
-
-
-  const savePolicy =
-    document.getElementById(
-      'saveMonitoringPolicy'
-    );
-
-
-  if(
-    savePolicy
-  ) {
-
-    savePolicy.onclick =
-      saveMonitoringPolicy;
-  }
-
-
-  [
-    'policyMode',
-    'policyShotsPerHour',
-    'policyDailyTarget',
-    'policyExpectedDayHours'
-  ]
-  .forEach(
-    id => {
-
-      const el =
-        document.getElementById(id);
-
-
-      if(
-        el
-      ) {
-
-        el.onchange =
-          updatePolicyEstimate;
-
-
-        el.oninput =
-          updatePolicyEstimate;
-      }
-    }
-  );
-
-
-  const from =
-    document.getElementById(
-      'fromDate'
-    );
-
-
-  const to =
-    document.getElementById(
-      'toDate'
-    );
-
-
-  const selector =
-    document.getElementById(
-      'reportEmployee'
-    );
-
-
-  if(
-    from
-  ) {
-
-    from.onchange =
-      () => {
-
-        state.reportPeriod.from =
-          from.value;
-
-
-        render();
-      };
-  }
-
-
-  if(
-    to
-  ) {
-
-    to.onchange =
-      () => {
-
-        state.reportPeriod.to =
-          to.value;
-
-
-        render();
-      };
-  }
-
-
-  if(
-    selector
-  ) {
-
-    selector.onchange =
-      () => {
-
-        state.selectedEmployeeId =
-          selector.value;
-
-
-        render();
-      };
-  }
-
-
-  const generate =
-    document.getElementById(
-      'generateBtn'
-    );
-
-
-  if(
-    generate
-  ) {
-
-    generate.onclick =
-      generateReport;
-  }
-
-
-  const request =
-    document.getElementById(
-      'requestEmployerReport'
-    );
-
-
-  if(
-    request
-  ) {
-
-    request.onclick =
-      () =>
-        toast(
-          'Report request queued for White Glove review.'
-        );
-  }
-
 
   document
     .querySelectorAll('[data-check]')
     .forEach(
-      x => {
-
-        x.onchange =
-          () => {
-
-            state.reviewerChecks[
-              Number(
-                x.dataset.check
-              )
-            ]
-            =
-            x.checked;
-          };
-      }
+      x=>
+        x.onchange=()=>{
+          state.reviewerChecks[
+            Number(x.dataset.check)
+          ]=x.checked;
+        }
     );
 
+  document
+    .querySelectorAll('[data-review-shot]')
+    .forEach(
+      x=>
+        x.onchange=()=>{
+          const id=x.dataset.reviewShot;
 
-  const approve =
-    document.getElementById(
-      'approveBtn'
+          if(
+            x.checked&&
+            !state.reviewedShotIds.includes(id)
+          ){
+            state.reviewedShotIds.push(id);
+          }
+
+          if(!x.checked){
+            state.reviewedShotIds=
+              state.reviewedShotIds.filter(
+                v=>v!==id
+              );
+          }
+
+          render();
+        }
     );
 
+  document
+    .querySelectorAll('[data-resolve-finding]')
+    .forEach(
+      x=>
+        x.onchange=()=>{
+          const i=
+            Number(x.dataset.resolveFinding);
 
-  if(
-    approve
-  ) {
+          if(
+            x.checked&&
+            !state.resolvedFindings.includes(i)
+          ){
+            state.resolvedFindings.push(i);
+          }
 
-    approve.onclick =
-      () => {
+          if(!x.checked){
+            state.resolvedFindings=
+              state.resolvedFindings.filter(
+                v=>v!==i
+              );
+          }
 
-        if(
-          !state.reviewerChecks.every(
-            Boolean
-          )
-        ) {
-
-          toast(
-            'Complete all reviewer checks before approval.'
-          );
-
-          return;
+          render();
         }
+    );
 
+  const role=
+    document.getElementById('roleSwitcher');
 
-        state.reportStatus =
-          'Approved';
+  if(role){
+    role.onchange=()=>
+      setRole(role.value);
+  }
 
+  const sw=
+    document.getElementById('employerSwitcher');
 
-        const e =
-          employeeById(
-            state.reportEmployeeId
-          );
+  if(sw){
+    sw.onchange=()=>{
+      state.portalEmployer=sw.value;
 
+      localStorage.setItem(
+        'wgmPortalEmployer',
+        state.portalEmployer
+      );
 
-        if(
-          e
-        ) {
+      state.selectedEmployeeId=
+        portal()[0]?.id||'';
 
-          e.reportingStatus =
-            'Approved';
-        }
+      render();
+    };
+  }
 
+  const sync=
+    document.getElementById('syncScrin');
 
-        saveEmployees();
+  if(sync){
+    sync.onclick=syncScrin;
+  }
 
+  const test=
+    document.getElementById('testScrin');
 
-        render();
+  if(test){
+    test.onclick=testScrin;
+  }
 
+  const ref=
+    document.getElementById('refreshConnections');
 
-        toast(
-          'Report approved by White Glove reviewer.'
+  if(ref){
+    ref.onclick=refreshConnections;
+  }
+
+  const sm=
+    document.getElementById('saveMappings');
+
+  if(sm){
+    sm.onclick=saveMappings;
+  }
+
+  const ld=
+    document.getElementById('loadLiveDay');
+
+  if(ld){
+    ld.onclick=loadLiveDay;
+  }
+
+  const gen=
+    document.getElementById('generateBtn');
+
+  if(gen){
+    gen.onclick=generateReport;
+  }
+
+  const all=
+    document.getElementById('markAllReviewed');
+
+  if(all){
+    all.onclick=()=>{
+      state.reviewedShotIds=
+        (
+          state.analytics?.selectedScreenshotEvidence||
+          []
+        ).map(
+          s=>s.screenshotId
         );
-      };
+
+      render();
+    };
   }
 
+  const rn=
+    document.getElementById('reviewerName');
 
-  const preview =
-    document.getElementById(
-      'previewReport'
-    );
+  if(rn){
+    rn.oninput=()=>{
+      state.reviewerName=rn.value;
 
-
-  if(
-    preview
-  ) {
-
-    preview.onclick =
-      () => {
-
-        state.page =
-          'reportPreview';
-
-
-        render();
-      };
+      localStorage.setItem(
+        'wgmReviewerName',
+        state.reviewerName
+      );
+    };
   }
 
+  const p=
+    document.getElementById('previewReport');
 
-  const preview2 =
-    document.getElementById(
-      'previewReport2'
-    );
-
-
-  if(
-    preview2
-  ) {
-
-    preview2.onclick =
-      () => {
-
-        state.page =
-          'reportPreview';
-
-
-        render();
-      };
+  if(p){
+    p.onclick=()=>{
+      state.page='reportPreview';
+      render();
+    };
   }
 
+  const p2=
+    document.getElementById('previewReport2');
 
-  const release =
-    document.getElementById(
-      'releaseBtn'
-    );
-
-
-  if(
-    release
-  ) {
-
-    release.onclick =
-      releaseCurrentReport;
+  if(p2){
+    p2.onclick=()=>{
+      state.page='reportPreview';
+      render();
+    };
   }
 
+  const approve=
+    document.getElementById('approveBtn');
 
-  const print =
-    document.getElementById(
-      'printReport'
-    );
+  if(approve){
+    approve.onclick=()=>{
+      const shots=
+        state.analytics?.selectedScreenshotEvidence||
+        [];
 
+      if(
+        !state.reviewerChecks.every(Boolean)
+      ){
+        toast(
+          'Complete the reviewer checklist.'
+        );
 
-  if(
-    print
-  ) {
+        return;
+      }
 
-    print.onclick =
-      () =>
-        window.print();
+      if(
+        shots.length&&
+        !humanChecked()
+      ){
+        toast(
+          'Check at least one screenshot before approval.'
+        );
+
+        return;
+      }
+
+      if(unresolved()>0){
+        toast(
+          'Resolve every AI finding before approval.'
+        );
+
+        return;
+      }
+
+      if(!state.reviewerName.trim()){
+        toast(
+          'Enter reviewer name.'
+        );
+
+        return;
+      }
+
+      state.reportStatus='Approved';
+
+      const e=
+        empById(state.reportEmployeeId);
+
+      if(e){
+        e.reportingStatus='Approved';
+      }
+
+      saveEmployees();
+
+      render();
+
+      toast(
+        'Human review approved. HUMAN REVIEWED stamp is now active.'
+      );
+    };
+  }
+
+  const rel=
+    document.getElementById('releaseBtn');
+
+  if(rel){
+    rel.onclick=releaseCurrent;
+  }
+
+  const pr=
+    document.getElementById('printReport');
+
+  if(pr){
+    pr.onclick=()=>window.print();
   }
 }
 
+async function init(){
+  try{
+    const r=await fetch('/api/health');
+    const h=await r.json();
 
-/* ==========================================================
-   INITIALIZE
-   ========================================================== */
+    state.mode=
+      h.mode==='live'
+        ?'LIVE'
+        :'DEMO';
 
-async function initializeApp() {
-
-  try {
-
-    const r =
-      await fetch(
-        '/api/health'
-      );
-
-
-    const h =
-      await r.json();
-
-
-    state.mode =
-      h.mode === 'live'
-        ? 'LIVE'
-        : 'DEMO';
-
-
-    if(
-      state.mode === 'LIVE'
-    ) {
-
-      state.syncMessage =
-        (
-          `Live Scrin configuration detected. `
-          +
-          `${h.connectionCount??'—'} connection(s) configured. `
-          +
-          `Analytics ${h.analysisVersion||'unknown'} · `
-          +
-          `Prompt ${h.promptVersion||'unknown'}.`
-        );
+    if(state.mode==='LIVE'){
+      state.syncMessage=
+        `Live Scrin detected. ${h.connectionCount??'—'} connection(s). ${h.analysisVersion||''}`;
     }
 
+  }catch{}
 
-  } catch(err) {
-
-    console.error(
-      'Could not determine WGM mode:',
-      err
+  try{
+    const r=await fetch(
+      '/api/scrin/connections'
     );
-  }
 
-
-  try {
-
-    const r =
-      await fetch(
-        '/api/scrin/connections'
-      );
-
-
-    const d =
-      await r.json();
-
+    const d=await r.json();
 
     if(
-      r.ok
-      &&
-      Array.isArray(
-        d.connections
-      )
-    ) {
-
-      state.connections =
-        d.connections;
-
-
+      r.ok&&
+      Array.isArray(d.connections)
+    ){
+      state.connections=d.connections;
       saveConnections();
     }
 
+  }catch{}
 
-  } catch(err) {
-
-    console.error(
-      'Could not load Scrin connections:',
-      err
-    );
+  if(state.role==='employer'){
+    ensureEmployer();
   }
-
-
-  if(
-    state.role === 'employer'
-  ) {
-
-    ensureEmployerSelection();
-  }
-
 
   render();
 }
 
-
-initializeApp();
+init();
