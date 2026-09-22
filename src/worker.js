@@ -1,88 +1,1684 @@
-const ANALYSIS_VERSION='wgm-period-analytics-1.1';
-const RULES_VERSION='wgm-review-rules-1.1';
-const PROMPT_VERSION='wgm-official-report-prompt-2.0';
+const ANALYSIS_VERSION = 'wgm-fraud-screening-1.0';
+const RULES_VERSION = 'wgm-fraud-review-rules-1.0';
+const PROMPT_VERSION = 'wgm-fraud-screening-prompt-1.0';
 
-const REPORT_SCHEMA={type:'object',properties:{
-  page1:{type:'object',properties:{monthlyConclusion:{type:'string'},coachingTakeaway:{type:'string'},summarySentence:{type:'string'},diligenceStatus:{type:'string',enum:['Consistent','Context','Review']},integrityStatus:{type:'string',enum:['Clear','Review']},whatMatters:{type:'array',minItems:3,maxItems:3,items:{type:'object',properties:{title:{type:'string'},explanation:{type:'string'}},required:['title','explanation'],additionalProperties:false}},positiveConfirmation:{type:'string'},integrityStatement:{type:'string'},whiteGloveAction:{type:'string'}},required:['monthlyConclusion','coachingTakeaway','summarySentence','diligenceStatus','integrityStatus','whatMatters','positiveConfirmation','integrityStatement','whiteGloveAction'],additionalProperties:false},
-  page2:{type:'object',properties:{weeks:{type:'array',minItems:1,maxItems:5,items:{type:'object',properties:{label:{type:'string'},dateRange:{type:'string'},trackedTime:{type:'string'},summary:{type:'string'}},required:['label','dateRange','trackedTime','summary'],additionalProperties:false}},workCategories:{type:'array',maxItems:7,items:{type:'object',properties:{name:{type:'string'},percent:{type:'number'}},required:['name','percent'],additionalProperties:false}},reviewCoverage:{type:'object',properties:{activeDaysReviewed:{type:'integer'},trackedTimeReconciled:{type:'string'},screenshotCoverage:{type:'string',enum:['Complete','Partial','Limited','None']},integrityReview:{type:'string',enum:['Clear','Review']}},required:['activeDaysReviewed','trackedTimeReconciled','screenshotCoverage','integrityReview'],additionalProperties:false},trackingContext:{type:'string'}},required:['weeks','workCategories','reviewCoverage','trackingContext'],additionalProperties:false},
-  page3:{type:'object',properties:{strengths:{type:'array',minItems:3,maxItems:3,items:{type:'object',properties:{title:{type:'string'},explanation:{type:'string'}},required:['title','explanation'],additionalProperties:false}},reliabilityPositive:{type:'string'},coachingOpportunity:{type:'string'},whyItMatters:{type:'string'},nextExpectation:{type:'string'},coachingCompleted:{type:'string'},clientContext:{type:'string'},watchingNextMonth:{type:'string'}},required:['strengths','reliabilityPositive','coachingOpportunity','whyItMatters','nextExpectation','coachingCompleted','clientContext','watchingNextMonth'],additionalProperties:false},
-  page4:{type:'object',properties:{consistencyHeadline:{type:'string'},consistencyExplanation:{type:'string'},weeksMet:{type:'integer'},weeksTotal:{type:'integer'},integrityConcernCount:{type:'integer'},weeks:{type:'array',minItems:1,maxItems:5,items:{type:'object',properties:{week:{type:'string'},schedule:{type:'string',enum:['Met','Below','Adjusted','Not assessed']},trackedTime:{type:'string'},workPattern:{type:'string',enum:['Consistent','Context','Review']},workRelevance:{type:'string',enum:['Business-related','Context','Review']},integrity:{type:'string',enum:['Clear','Review']}},required:['week','schedule','trackedTime','workPattern','workRelevance','integrity'],additionalProperties:false}},recurringPatterns:{type:'array',minItems:1,maxItems:4,items:{type:'string'}},recommendedFocus:{type:'string'}},required:['consistencyHeadline','consistencyExplanation','weeksMet','weeksTotal','integrityConcernCount','weeks','recurringPatterns','recommendedFocus'],additionalProperties:false},
-  page5:{type:'object',properties:{taskMap:{type:'array',minItems:1,maxItems:5,items:{type:'object',properties:{week:{type:'string'},dateRange:{type:'string'},categories:{type:'array',maxItems:7,items:{type:'string'}}},required:['week','dateRange','categories'],additionalProperties:false}},verifiedEvidence:{type:'array',maxItems:3,items:{type:'object',properties:{dateTime:{type:'string'},activity:{type:'string'},screenshotId:{type:'string'}},required:['dateTime','activity','screenshotId'],additionalProperties:false}},clientTakeaway:{type:'string'},whiteGloveActionNextMonth:{type:'string'},support:{type:'object',properties:{reviewed:{type:'string'},interpreted:{type:'string'},coached:{type:'string'},nextMonth:{type:'string'}},required:['reviewed','interpreted','coached','nextMonth'],additionalProperties:false}},required:['taskMap','verifiedEvidence','clientTakeaway','whiteGloveActionNextMonth','support'],additionalProperties:false}
-},required:['page1','page2','page3','page4','page5'],additionalProperties:false};
+const REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    overallResult: {
+      type: 'string',
+      enum: ['clear', 'review'],
+    },
+    screeningHeadline: { type: 'string' },
+    screeningSubtext: { type: 'string' },
+    checks: {
+      type: 'array',
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            enum: [
+              'repeated_frozen',
+              'repetitive_cycling',
+              'activity_simulation',
+              'repeated_across_days',
+            ],
+          },
+          status: {
+            type: 'string',
+            enum: ['clear', 'review', 'not_assessed'],
+          },
+          detail: { type: 'string' },
+        },
+        required: ['key', 'status', 'detail'],
+        additionalProperties: false,
+      },
+    },
+    findings: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string' },
+          screenshotIds: {
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 8,
+          },
+        },
+        required: ['reason', 'screenshotIds'],
+        additionalProperties: false,
+      },
+    },
+    scopeNote: { type: 'string' },
+  },
+  required: [
+    'overallResult',
+    'screeningHeadline',
+    'screeningSubtext',
+    'checks',
+    'findings',
+    'scopeNote',
+  ],
+  additionalProperties: false,
+};
 
-const SYSTEM_PROMPT=`You are the White Glove Monitor monthly VA reporting engine.
-Populate the approved five-page White Glove Monthly VA Accountability Report. Do not redesign it or add sections.
-Use WGM-calculated facts as authoritative. Apply approved PTO, holidays, schedule changes, and business context before describing shortfalls. Use the role as context, not a rigid task checklist. Do not manufacture concerns. Device activity is not productivity. Ordinary breaks, reading, research, meetings, calls, training, or document review are not inherently negative. Never invent work, outcomes, task duration, misconduct, fraud, theft, tampering, or reassurance unsupported by evidence. Missing screenshots are a coverage limitation, not employee wrongdoing. Category percentages are directional unless explicitly marked exact. Visual screenshot interpretation must be conservative. Page 5 verified evidence may only cite screenshot IDs actually supplied with images in this request. If fewer than three images support a useful statement, return fewer than three. Use defensible integrity wording such as “No material review-worthy integrity indicators were identified in the records reviewed.” Never certify absence of misconduct. Human review is mandatory before release. Keep writing concise, founder-friendly, non-punitive, and decision-relevant.
-Page 1: conclusion, coaching takeaway, one-sentence summary, diligence/integrity status, three What Matters points, positive confirmation, integrity statement, White Glove action.
-Page 2: week-by-week work, 5–7 simple categories where supportable, review coverage, tracking limitations.
-Page 3: three evidence-backed strengths, reliability positive, coaching opportunity, why it matters, next expectation, actual coaching/support completed, client context, next-month watch items.
-Page 4: consistency conclusion, weekly schedule/work/relevance/integrity states, recurring patterns, one focus.
-Page 5: weekly category-presence task map, up to three visually verified evidence points, client takeaway, White Glove action/next-month note, support summary.`;
+const SYSTEM_PROMPT = `You are the White Glove Monitor screenshot fraud-screening engine.
+You are filling a fixed one-page report template. You do not design the report.
+Review only the screenshot images and verified metadata supplied in this request.
 
-const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json;charset=UTF-8','cache-control':'no-store'}});
-const readJson=async r=>{try{return await r.json()}catch{return {}}};
-const round=(v,d=1)=>Math.round(Number(v||0)*10**d)/10**d;
-const clamp=(v,min,max)=>Math.max(min,Math.min(max,Number(v||0)));
-const unique=a=>[...new Set((a||[]).filter(Boolean))];
-const addDays=(s,n)=>{const d=new Date(`${s}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+Number(n||0));return d.toISOString().slice(0,10)};
-const dayCount=(a,b)=>{const s=Date.parse(`${a}T00:00:00Z`),e=Date.parse(`${b}T00:00:00Z`);return Number.isFinite(s)&&Number.isFinite(e)&&e>=s?Math.floor((e-s)/86400000)+1:0};
-const hoursText=h=>{const m=Math.max(0,Math.round(Number(h||0)*60));return `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`};
+The four required checks are:
+1. repeated_frozen — concerning unchanged/frozen-screen sequences;
+2. repetitive_cycling — suspicious back-and-forth or repetitive screen cycling;
+3. activity_simulation — visible mouse-mover, auto-clicker, macro, automation or activity-simulation interfaces;
+4. repeated_across_days — replay-like or substantially repeated visual sequences appearing across different dates.
 
-function parseConnections(env){const out=[];if(env.SCRIN_CONNECTIONS_JSON){let p;try{p=JSON.parse(env.SCRIN_CONNECTIONS_JSON)}catch{throw Error('SCRIN_CONNECTIONS_JSON is not valid JSON')}if(!Array.isArray(p))throw Error('SCRIN_CONNECTIONS_JSON must be a JSON array');for(const r of p){if(!r?.id||!r?.token)continue;const type=r.type==='dedicated'?'dedicated':'shared';if(type==='dedicated'&&!String(r.employer||'').trim())throw Error(`Dedicated connection ${r.id} requires an employer`);out.push({id:String(r.id),name:String(r.name||r.id),provider:'scrin',type,employer:String(r.employer||''),token:String(r.token),enabled:r.enabled!==false})}}if(!out.length&&env.SCRIN_TOKEN)out.push({id:'wgh-main',name:'WGH Main Scrin Account',provider:'scrin',type:'shared',employer:'',token:String(env.SCRIN_TOKEN),enabled:true});return out.filter(x=>x.enabled)}
-const publicConnection=c=>({id:c.id,name:c.name,provider:'scrin',type:c.type,employer:c.employer||'',employerLocked:c.type==='dedicated',status:'configured'});
-function getConnection(env,id){const cs=parseConnections(env);if(!cs.length)throw Error('No Scrin connection is configured');if(id){const c=cs.find(x=>x.id===String(id));if(!c)throw Error(`Unknown Scrin connection: ${id}`);return c}if(cs.length===1)return cs[0];throw Error('connectionId is required when more than one Scrin connection is configured')}
-async function scrin(env,id,path,body){const c=getConnection(env,id),base=(env.SCRIN_API_BASE_URL||'https://scrin.io').replace(/\/$/,'');const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json','X-SSM-Token':c.token},body:JSON.stringify(body)});const t=await r.text();if(!r.ok)throw Error(`Scrin ${r.status} (${c.name}): ${t.slice(0,300)}`);let data=null;if(t){try{data=JSON.parse(t)}catch{throw Error(`Scrin returned non-JSON data from ${path}`)}}return {connection:c,data}}
+Be conservative. Similar business screens, repeated use of the same CRM, email, browser, documents, dashboards, templates or websites are not suspicious by themselves.
+Activity level, idle time, app switching, AI-tool use, screenshot spacing, schedule coverage or missing screenshots are not proof of fraud or misconduct.
+Do not infer hidden automation or physical mouse movers that are not visible.
+Do not invent suspicious behavior, work output, task duration, intent, fraud, theft, tampering or misconduct.
+If the supplied visual sample is insufficient to assess a check, return not_assessed rather than clear.
+A finding must be supported by one or more supplied screenshot IDs. Never cite an ID that was not supplied.
+overallResult may be clear only when the supplied visual evidence does not contain a review-worthy suspicious pattern. Human review is still mandatory before release.
+Use concise client-facing wording. screeningHeadline should be “No suspicious patterns found.” when overallResult is clear. When review is required, use neutral wording such as “Patterns require human review.”
+screeningSubtext should describe only the reviewed screenshots, not certify the employee’s entire work month.
+scopeNote must state the limitation of the review, including that hidden automation and physical mouse movers may not be visible.`;
 
-function demoCommon(){return {companies:[{id:477279,name:'WGH Scrin Account',employments:[{id:477279,name:'Maria Gadin',email:'masked@example.com',registered:true},{id:500002,name:'VA 2 — sync to reveal',email:'masked2@example.com',registered:true}]}]}}
-function normalizeCommon(data,c){const companies=Array.isArray(data?.companies)?data.companies:Array.isArray(data)?data:[],employees=[];for(const company of companies)for(const p of Array.isArray(company?.employments)?company.employments:[])employees.push({id:`${c.id}::${p.id}`,connectionId:c.id,connectionName:c.name,connectionType:c.type,connectionEmployer:c.employer||'',employerLocked:c.type==='dedicated',employmentId:p.id,name:p.name||p.email||`Employment ${p.id}`,email:p.email||null,scrinCompanyId:company.id,scrinCompany:company.name||'',source:c.type==='dedicated'?'Standalone WGM':'WGH Managed',role:'Virtual Assistant',reportingStatus:'Synced',employer:c.type==='dedicated'?c.employer:''});return {companies,employees}}
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'content-type': 'application/json;charset=UTF-8',
+      'cache-control': 'no-store',
+    },
+  });
+}
 
-function epochRange(from,to,offset=0){const s=Date.parse(`${from}T00:00:00Z`)-Number(offset||0)*60000,e=Date.parse(`${to}T23:59:59Z`)-Number(offset||0)*60000;if(!Number.isFinite(s)||!Number.isFinite(e)||e<s)throw Error('Invalid date range');return {from:Math.floor(s/1000),to:Math.floor(e/1000)}}
-const localDate=(sec,off=0)=>new Date(Number(sec)*1000+Number(off||0)*60000).toISOString().slice(0,10);
-function localTime(sec,off=0){if(sec==null)return '—';const d=new Date((Number(sec)+Number(off||0)*60)*1000);let h=d.getUTCHours();const m=String(d.getUTCMinutes()).padStart(2,'0'),ampm=h>=12?'PM':'AM';h%=12;if(!h)h=12;return `${h}:${m} ${ampm}`}
-const duration=a=>{const f=Number(a?.from),t=Number(a?.to);return Number.isFinite(f)&&Number.isFinite(t)&&t>f?t-f:0};
-function unionSeconds(acts=[]){const x=acts.map(a=>[Number(a.from),Number(a.to)]).filter(([f,t])=>Number.isFinite(f)&&Number.isFinite(t)&&t>f).sort((a,b)=>a[0]-b[0]);if(!x.length)return 0;let total=0,[s,e]=x[0];for(let i=1;i<x.length;i++){const [ns,ne]=x[i];if(ns<=e)e=Math.max(e,ne);else{total+=e-s;s=ns;e=ne}}return total+e-s}
-function summarizeActivities(acts=[],expected=0,off=0){const trackedSeconds=unionSeconds(acts),days=new Set(),projectSeconds={};for(const a of acts){const d=duration(a);if(!d)continue;days.add(localDate(a.from,off));const k=a.projectId==null?'Unassigned':String(a.projectId);projectSeconds[k]=(projectSeconds[k]||0)+d}const trackedHours=trackedSeconds/3600;return {trackedSeconds,trackedHours,activeDays:days.size,expectedHours:Number(expected||0),scheduleCoveragePercent:Number(expected)>0?round(Math.min(100,trackedHours/Number(expected)*100),1):null,projectSeconds}}
-function projectNames(common){const out={};const walk=v=>{if(!v||typeof v!=='object')return;if(Array.isArray(v)){v.forEach(walk);return}for(const [k,x] of Object.entries(v)){if(k==='projects'&&Array.isArray(x))x.forEach(p=>{if(p?.id!=null)out[String(p.id)]=p.name||`Project ${p.id}`});else walk(x)}};walk(common);return out}
-function projectSummary(metrics,common){const names=projectNames(common),total=Object.values(metrics.projectSeconds||{}).reduce((a,b)=>a+b,0)||1;return Object.entries(metrics.projectSeconds||{}).sort((a,b)=>b[1]-a[1]).map(([id,seconds])=>({id,name:names[id]||(id==='Unassigned'?'Unassigned':`Project ${id}`),seconds,hours:round(seconds/3600,2),sharePercent:round(seconds/total*100,1)}))}
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
 
-async function screenshotsFor(env,id,activityIds){const out=[],ids=unique(activityIds);for(let i=0;i<ids.length;i+=100){const r=await scrin(env,id,'/api/v2/GetScreenshots',ids.slice(i,i+100));if(Array.isArray(r.data))out.push(...r.data)}const map=new Map();for(const s of out)map.set(s?.id||`${s?.activityId||'a'}:${s?.taken||0}`,s);return [...map.values()].sort((a,b)=>Number(a?.taken||0)-Number(b?.taken||0))}
-const appName=a=>String(a?.applicationName||'Unknown').trim()||'Unknown';
-function summarizeScreenshots(shots=[]){const apps={};let level=0,count=0;for(const s of shots){const l=Number(s?.activityLevel);if(Number.isFinite(l)){level+=l;count++}for(const a of Array.isArray(s?.applications)?s.applications:[]){const n=appName(a),d=Number(a?.duration||0);apps[n]=(apps[n]||0)+(Number.isFinite(d)?d:0)}}const total=Object.values(apps).reduce((a,b)=>a+b,0)||1;return {screenshotCount:shots.length,averageActivityLevel:count?round(level/count,1):null,apps:Object.entries(apps).sort((a,b)=>b[1]-a[1]).map(([name,seconds])=>({name,seconds,hours:round(seconds/3600,2),sharePercent:round(seconds/total*100,1)}))}}
+function round(value, decimals = 1) {
+  const factor = 10 ** decimals;
+  return Math.round(Number(value || 0) * factor) / factor;
+}
 
-function classify(text=''){const v=String(text).toLowerCase(),rules=[['CRM & lead follow-up',/follow up boss|followupboss|hubspot|crm|lead|prospect|pipeline|appointment|dialer|sales/],['Email & communication',/gmail|outlook|email|mail|slack|whatsapp|message|teams chat|communication/],['Listings / property',/zillow|redfin|realtor|mls|navica|property|listing|real estate|comparables|market analysis/],['Admin / operations',/admin|operations|calendar|schedule|data entry|quickbooks|notion|airtable|trello|asana|monday/],['Files / documents',/google docs|google drive|google sheets|sheets|excel|word|document|pdf|adobe|docusign|file|spreadsheet/],['Marketing / content',/canva|instagram|facebook|linkedin|social|marketing|content|graphic|post|campaign/],['Research / AI',/chatgpt|claude|gemini|ai\b|chrome|safari|firefox|browser|google search|research|web search/],['Meetings',/zoom|google meet|microsoft teams|meeting|conference/]];for(const [c,r] of rules)if(r.test(v))return c;return 'Other business activity'}
-function categorySummary(acts=[],shots=[]){const w={};for(const a of acts){const d=duration(a),note=String(a?.note||'').trim();if(d&&note){const c=classify(note);w[c]=(w[c]||0)+d}}for(const s of shots)for(const a of Array.isArray(s?.applications)?s.applications:[]){const d=Number(a?.duration||0);if(Number.isFinite(d)&&d>0){const c=classify(appName(a));w[c]=(w[c]||0)+d}}const total=Object.values(w).reduce((a,b)=>a+b,0)||1;return Object.entries(w).sort((a,b)=>b[1]-a[1]).map(([name,x])=>({name,sharePercent:round(x/total*100,1),evidenceWeightSeconds:Math.round(x)})).slice(0,8)}
-function evidenceCoverage(acts=[],shots=[],off=0){const ids=new Set(shots.map(s=>String(s?.activityId||'')).filter(Boolean)),tracked=unionSeconds(acts),coveredActs=acts.filter(a=>ids.has(String(a?.id||''))),covered=unionSeconds(coveredActs),active=unique(acts.filter(a=>duration(a)>0).map(a=>localDate(a.from,off))),shotDays=unique(shots.filter(s=>Number.isFinite(Number(s?.taken))).map(s=>localDate(s.taken,off)));return {evidenceCoveragePercent:clamp(tracked?round(covered/tracked*100,1):0,0,100),activeDayCoveragePercent:clamp(active.length?round(shotDays.length/active.length*100,1):0,0,100),trackedSeconds:tracked,coveredTrackedSeconds:covered,activityRecords:acts.length,activitiesWithScreenshots:coveredActs.length,activeDays:active.length,daysWithScreenshots:shotDays.length,screenshotCount:shots.length,screenshotDensityPerTrackedHour:tracked?round(shots.length/(tracked/3600),2):0}}
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value || 0)));
+}
 
-function monday(date){const d=new Date(`${date}T00:00:00Z`),day=d.getUTCDay(),diff=day===0?-6:1-day;d.setUTCDate(d.getUTCDate()+diff);return d.toISOString().slice(0,10)}
-const shortDate=s=>new Date(`${s}T00:00:00Z`).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
-function weekly(acts,shots,from,to,off=0){const g=new Map();const group=(day,key,item)=>{const w=monday(day);if(!g.has(w))g.set(w,{activities:[],screenshots:[]});g.get(w)[key].push(item)};acts.filter(a=>duration(a)>0).forEach(a=>group(localDate(a.from,off),'activities',a));shots.filter(s=>Number.isFinite(Number(s?.taken))).forEach(s=>group(localDate(s.taken,off),'screenshots',s));const f=Date.parse(`${from}T00:00:00Z`),t=Date.parse(`${to}T00:00:00Z`);return [...g.entries()].sort((a,b)=>a[0].localeCompare(b[0])).slice(0,5).map(([ws,x])=>{const we=addDays(ws,6),start=Date.parse(`${ws}T00:00:00Z`)<f?from:ws,end=Date.parse(`${we}T00:00:00Z`)>t?to:we,cov=evidenceCoverage(x.activities,x.screenshots,off);return {weekStart:start,weekEnd:end,label:`${shortDate(start)}–${shortDate(end)}`,trackedHours:round(unionSeconds(x.activities)/3600,2),activeDays:unique(x.activities.map(a=>localDate(a.from,off))).length,screenshotCount:x.screenshots.length,evidenceCoveragePercent:cov.evidenceCoveragePercent,activeDayCoveragePercent:cov.activeDayCoveragePercent,categories:categorySummary(x.activities,x.screenshots).slice(0,6),topApps:summarizeScreenshots(x.screenshots).apps.slice(0,5),notes:unique(x.activities.map(a=>String(a?.note||'').trim())).slice(0,5)}})}
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
 
-function selectVision(shots=[],off=0,max=12){const valid=shots.filter(s=>Number.isFinite(Number(s?.taken))&&Boolean(s?.url||s?.thumbUrl)).sort((a,b)=>Number(a.taken)-Number(b.taken));if(!valid.length)return [];const days=new Map();for(const s of valid){const d=localDate(s.taken,off);if(!days.has(d))days.set(d,[]);days.get(d).push(s)}const keys=[...days.keys()].sort(),picked=[],seen=new Set();const add=s=>{if(!s)return;const id=String(s.id||`${s.activityId||'a'}:${s.taken}`);if(seen.has(id))return;seen.add(id);picked.push(s)};const slots=Math.min(keys.length,max);for(let i=0;i<slots;i++){const idx=slots===1?0:Math.round(i*(keys.length-1)/(slots-1)),arr=days.get(keys[idx]);add(arr[Math.floor(arr.length/2)])}for(let i=0;picked.length<max&&i<valid.length;i++){const idx=Math.round(i*(valid.length-1)/Math.max(1,max-1));add(valid[idx])}return picked.slice(0,max).sort((a,b)=>Number(a.taken)-Number(b.taken)).map(s=>{const apps=Array.isArray(s?.applications)?s.applications:[],fg=apps.find(a=>a?.fromScreen)||apps[0];return {screenshotId:String(s.id||`${s.activityId||'a'}:${s.taken}`),activityId:s.activityId?String(s.activityId):'',taken:Number(s.taken),date:localDate(s.taken,off),time:localTime(s.taken,off),dateTime:`${localDate(s.taken,off)} ${localTime(s.taken,off)}`,application:fg?.applicationName||'Screenshot',activityLevel:Number.isFinite(Number(s.activityLevel))?Number(s.activityLevel):null,imageUrl:s.url||s.thumbUrl||null,thumbUrl:s.thumbUrl||s.url||null}})}
+function addDays(dateString, days) {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+}
 
-function assessment(a){const r=[];if(a.metrics.trackedHours<=0)r.push('No tracked time was returned for the selected period.');if(a.metrics.scheduleCoveragePercent!==null&&a.metrics.scheduleCoveragePercent<85)r.push('Schedule coverage is below the current review threshold and may require context.');if(a.evidence.evidenceCoveragePercent<75&&a.metrics.trackedHours>0)r.push('A material portion of tracked activity does not have linked screenshot evidence.');if(a.evidence.activeDayCoveragePercent<80&&a.metrics.activeDays>0)r.push('Some active workdays do not have screenshot evidence.');if(a.metrics.trackedHours>0&&!a.evidence.screenshotCount)r.push('Tracked time exists but no screenshot evidence was returned.');return {status:r.length?'Yellow':'Green',reasons:r,note:r.length?'Human context or evidence review is required before release.':'No review-worthy issue was detected in the available evidence under the current prototype rules.'}}
+function dayCountInclusive(from, to) {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
 
-async function analytics(env,input){const id=input.connectionId,employmentId=input.employmentId,from=input.from,to=input.to,off=Number(input.timezoneOffsetMinutes||0),expected=Number(input.adjustedExpectedHours??input.monthlyContext?.adjustedExpectedHours??input.expectedHours??0);if(!employmentId||!from||!to)throw Error('employmentId, from and to are required');const range=epochRange(from,to,off),common=await scrin(env,id,'/api/v2/GetCommonData',{}),ar=await scrin(env,id,'/api/v2/GetActivities',[{employmentId:String(employmentId),from:range.from,to:range.to}]),acts=Array.isArray(ar.data)?ar.data:[],shots=await screenshotsFor(env,id,acts.map(a=>a.id)),metrics=summarizeActivities(acts,expected,off),evidence=evidenceCoverage(acts,shots,off),shotSummary=summarizeScreenshots(shots),selected=selectVision(shots,off,Number(input.maxVisionScreenshots||12));const out={period:{from,to,dayCount:dayCount(from,to)},connection:publicConnection(common.connection),metrics,evidence,projects:projectSummary(metrics,common.data),categories:categorySummary(acts,shots),apps:shotSummary.apps.slice(0,15),averageActivityLevel:shotSummary.averageActivityLevel,notes:unique(acts.map(a=>String(a?.note||'').trim())).slice(0,30),weeks:weekly(acts,shots,from,to,off),selectedScreenshotEvidence:selected,analysisDisclosure:{activityRecordsAnalyzedPercent:100,screenshotMetadataAnalyzedPercent:shots.length?100:0,screenshotImageContentAnalyzedPercent:0,screenshotImagesSelectedForVisualReview:selected.length,screenshotImageSamplePercent:shots.length?round(selected.length/shots.length*100,2):0,note:'WGM calculations use all returned activity records and screenshot metadata/application data. A small selected screenshot-image sample may be sent to the AI for visual review; human review remains mandatory.'},versions:{analysisVersion:ANALYSIS_VERSION,rulesVersion:RULES_VERSION}};out.review=assessment(out);return out}
-async function previousAnalytics(env,input){if(input.includePrevious===false)return null;const n=dayCount(input.from,input.to);if(!n)return null;const to=addDays(input.from,-1),from=addDays(to,-(n-1));return analytics(env,{...input,from,to,expectedHours:Number(input.previousExpectedHours||0),adjustedExpectedHours:Number(input.previousAdjustedExpectedHours||input.previousExpectedHours||0),includePrevious:false,maxVisionScreenshots:0})}
-const comparison=(c,p)=>!p?{available:false}:{available:true,trackedHoursDelta:round(c.metrics.trackedHours-p.metrics.trackedHours,2),trackedHoursPercentChange:p.metrics.trackedHours>0?round((c.metrics.trackedHours-p.metrics.trackedHours)/p.metrics.trackedHours*100,1):null,activeDaysDelta:c.metrics.activeDays-p.metrics.activeDays,screenshotCountDelta:c.evidence.screenshotCount-p.evidence.screenshotCount,evidenceCoverageDeltaPoints:round(c.evidence.evidenceCoveragePercent-p.evidence.evidenceCoveragePercent,1)};
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return 0;
+  }
 
-function screenshotCoverageLabel(e){if(!e?.screenshotCount)return 'None';if(Number(e.evidenceCoveragePercent)>=95&&Number(e.activeDayCoveragePercent)>=95)return 'Complete';if(Number(e.evidenceCoveragePercent)>=75&&Number(e.activeDayCoveragePercent)>=75)return 'Partial';return 'Limited'}
-function fallback(input){const a=input.analytics||{},m=a.metrics||{},e=a.evidence||{},review=a.review||{},weeks=(a.weeks||[]).slice(0,5),cats=(a.categories||[]).slice(0,7),names=cats.slice(0,3).map(x=>x.name),ctx=input.monthlyContext||{},needs=review.status&&review.status!=='Green',schedule=m.scheduleCoveragePercent==null?'Schedule coverage requires baseline confirmation':m.scheduleCoveragePercent>=100?'Required monthly coverage was met':m.scheduleCoveragePercent>=95?'Recorded coverage was close to the adjusted monthly requirement':'Recorded coverage should be reviewed against approved context',scheduleExp=m.scheduleCoveragePercent==null?'Expected monthly hours were not supplied, so WGM did not manufacture a schedule conclusion.':`${hoursText(m.trackedHours)} was recorded against ${hoursText(m.expectedHours)} expected hours, for ${m.scheduleCoveragePercent}% schedule coverage.`,work=names.length?`Work remained concentrated in ${names.join(', ')}`:'Available evidence supports broad business-related activity',coaching=needs?(review.reasons||[]).join(' ')||'Human review is required before release.':'Keep project labels and notes clear so future monthly reports can be more specific.',weekRows=weeks.map((w,i)=>({label:`WEEK ${i+1}`,dateRange:w.label,trackedTime:hoursText(w.trackedHours),summary:`${w.categories?.[0]?.name?`Observed work included ${w.categories.slice(0,3).map(x=>x.name).join(', ')}. `:''}${w.evidenceCoveragePercent}% evidence coverage across ${w.screenshotCount} screenshot record(s).`})),weekStatus=weeks.map((w,i)=>({week:`W${i+1}`,schedule:'Not assessed',trackedTime:hoursText(w.trackedHours),workPattern:w.evidenceCoveragePercent>=75?'Consistent':'Context',workRelevance:w.categories?.length?'Business-related':'Context',integrity:'Clear'})),taskMap=weeks.map((w,i)=>({week:`WEEK ${i+1}`,dateRange:w.label,categories:(w.categories||[]).slice(0,7).map(x=>x.name)}));return {page1:{monthlyConclusion:needs?'the month with a review item that should be resolved before client release':'a generally consistent month of recorded, business-related work',coachingTakeaway:needs?coaching:'No material escalation is indicated; continue improving tracking detail where practical.',summarySentence:`${schedule}. ${work}. Human review remains required before release.`,diligenceStatus:needs?'Context':'Consistent',integrityStatus:needs?'Review':'Clear',whatMatters:[{title:schedule,explanation:scheduleExp},{title:work,explanation:names.length?'These are directional categories derived from projects, notes, and application metadata rather than exact task-duration allocations.':'Project/note detail was limited, so WGM retained broader evidence language rather than inventing precision.'},{title:needs?'Resolve the identified review item before release':'Keep tracking context clear',explanation:coaching}],positiveConfirmation:e.screenshotCount?`Available timing, applications, and ${e.screenshotCount} screenshot record(s) support recurring business-related activity across the month.`:'Tracked time and metadata support the review, but screenshot evidence was unavailable for visual confirmation.',integrityStatement:needs?'One or more review items require human interpretation. WGM has not made an automated misconduct finding.':'No material review-worthy integrity indicators were identified in the records reviewed. This is not a certification that misconduct could not have occurred.',whiteGloveAction:ctx.whiteGloveSupportActivity||'No coaching action recorded for this month.'},page2:{weeks:weekRows.length?weekRows:[{label:'WEEK 1',dateRange:`${a.period?.from||''}–${a.period?.to||''}`,trackedTime:hoursText(m.trackedHours),summary:'Weekly source detail was unavailable; monthly totals were retained without inventing weekly precision.'}],workCategories:cats.map(x=>({name:x.name,percent:Number(x.sharePercent||0)})),reviewCoverage:{activeDaysReviewed:Number(m.activeDays||0),trackedTimeReconciled:hoursText(m.trackedHours),screenshotCoverage:screenshotCoverageLabel(e),integrityReview:needs?'Review':'Clear'},trackingContext:`${e.evidenceCoveragePercent??0}% of tracked activity segments were linked to screenshot evidence. ${a.analysisDisclosure?.note||''}`.trim()},page3:{strengths:[{title:'Recorded work was reconciled',explanation:`${hoursText(m.trackedHours)} was recorded across ${m.activeDays||0} active workday(s).`},{title:names[0]||'Business-related activity was visible',explanation:names.length?`The strongest recurring directional categories were ${names.join(', ')}.`:'Available metadata supported general work activity without enough detail for a precise category mix.'},{title:'Evidence was reviewed conservatively',explanation:`${e.screenshotCount||0} screenshot record(s) were available, with ${e.evidenceCoveragePercent??0}% evidence coverage. Missing evidence was treated as a limitation rather than a performance conclusion.`}],reliabilityPositive:needs?'The month can still be reported, but the identified review item should be resolved before release.':'The available records did not surface a material review-worthy integrity indicator under the current WGM rules.',coachingOpportunity:needs?'Resolve the identified review item before release':'Keep project labels and notes clear',whyItMatters:'Clear schedule context, project labels, and notes help the client understand the work without turning monitoring into constant policing.',nextExpectation:needs?'Resolve the current review item and maintain clear tracking context during the next month.':'Continue clear project/note entry and maintain normal schedule visibility.',coachingCompleted:ctx.whiteGloveSupportActivity||'No coaching action was recorded for this month.',clientContext:input.context||ctx.materialBusinessContext||'No additional client clarification is recorded for this month.',watchingNextMonth:needs?'White Glove will watch the identified exception, schedule coverage, evidence continuity, and coaching adoption.':'White Glove will continue watching schedule coverage, work relevance, evidence continuity, and meaningful pattern changes.'},page4:{consistencyHeadline:needs?'The month was generally reportable, with a review item requiring human context.':'The month shows a generally consistent recorded-work pattern.',consistencyExplanation:scheduleExp,weeksMet:0,weeksTotal:weeks.length,integrityConcernCount:needs?1:0,weeks:weekStatus.length?weekStatus:[{week:'W1',schedule:'Not assessed',trackedTime:hoursText(m.trackedHours),workPattern:'Context',workRelevance:names.length?'Business-related':'Context',integrity:needs?'Review':'Clear'}],recurringPatterns:names.length?names.map(n=>`${n} appeared repeatedly in the period evidence.`).slice(0,4):['No reliable recurring category pattern could be derived from the available metadata.'],recommendedFocus:needs?'Resolve the identified review item before release and maintain clearer tracking context next month.':'Protect consistent work coverage while improving project/note specificity where practical.'},page5:{taskMap:taskMap.length?taskMap:[{week:'WEEK 1',dateRange:`${a.period?.from||''}–${a.period?.to||''}`,categories:names}],verifiedEvidence:[],clientTakeaway:`${schedule}. ${work}. ${needs?'A review item should be resolved before release.':'No material founder action is indicated from the current automated review, subject to White Glove human approval.'}`,whiteGloveActionNextMonth:ctx.whiteGloveSupportActivity?`White Glove recorded this month’s support activity: ${ctx.whiteGloveSupportActivity}. The next review will compare schedule, work mix, and evidence continuity.`:needs?'White Glove should resolve the identified review item and verify whether the pattern repeats next month.':'No coaching action was recorded this month; White Glove will continue routine monthly review and trend comparison.',support:{reviewed:`${hoursText(m.trackedHours)} tracked time and ${e.screenshotCount||0} screenshot record(s)`,interpreted:'Schedule, work allocation, meaningful patterns, context, and integrity indicators',coached:ctx.whiteGloveSupportActivity||'No coaching action recorded',nextMonth:needs?'Recheck the identified review item and evidence continuity':'Monitor schedule coverage, work relevance, and material pattern changes'}}}}
+  return Math.floor((end - start) / 86400000) + 1;
+}
 
-function visionContent(input,bench){const a=input.analytics||{},ev=Array.isArray(a.selectedScreenshotEvidence)?a.selectedScreenshotEvidence:[],clean={employee:input.employee||null,baseline:input.baseline||null,monthlyContext:input.monthlyContext||null,period:input.period||a.period||null,analytics:{...a,selectedScreenshotEvidence:ev.map(x=>({screenshotId:x.screenshotId,activityId:x.activityId,date:x.date,time:x.time,dateTime:x.dateTime,application:x.application,activityLevel:x.activityLevel}))},previous:input.previous||null,comparison:input.comparison||null,context:input.context||'',fallbackReference:bench};const content=[{type:'input_text',text:'Populate the approved White Glove five-page report JSON from the verified input below. Do not change objective metrics. The images that follow are a small selected visual-evidence sample; use only what is visibly supportable.\n\n'+JSON.stringify(clean)}];for(const x of ev){if(!x?.imageUrl)continue;content.push({type:'input_text',text:`VISUAL EVIDENCE — screenshotId=${x.screenshotId}; dateTime=${x.dateTime}; applicationMetadata=${x.application}`},{type:'input_image',image_url:x.imageUrl,detail:'auto'})}return content}
-async function generateWithAI(env,input){const bench=fallback(input);if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)return {report:bench,usedOpenAI:false,visionScreenshotsSent:0,warning:null};const content=visionContent(input,bench),count=content.filter(x=>x.type==='input_image').length;try{const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:env.OPENAI_MODEL,input:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content}],text:{format:{type:'json_schema',name:'wgm_official_monthly_report',strict:true,schema:REPORT_SCHEMA}}})}),d=await r.json();if(!r.ok)throw Error(`OpenAI ${r.status}: ${JSON.stringify(d).slice(0,500)}`);const text=d.output_text||d.output?.flatMap(x=>x.content||[]).find(x=>x.type==='output_text')?.text;if(!text)throw Error('No structured report returned');return {report:JSON.parse(text),usedOpenAI:true,visionScreenshotsSent:count,warning:null}}catch(err){return {report:bench,usedOpenAI:false,visionScreenshotsSent:0,warning:`OpenAI fallback used: ${err.message}`}}}
+function parseConnections(env) {
+  const connections = [];
 
-function demoAnalytics(input){const metrics={trackedSeconds:161.42*3600,trackedHours:161.42,activeDays:20,expectedHours:Number(input.expectedHours||160),scheduleCoveragePercent:100,projectSeconds:{}},evidence={evidenceCoveragePercent:96,activeDayCoveragePercent:100,trackedSeconds:metrics.trackedSeconds,coveredTrackedSeconds:metrics.trackedSeconds*.96,activityRecords:482,activitiesWithScreenshots:463,activeDays:20,daysWithScreenshots:20,screenshotCount:1842,screenshotDensityPerTrackedHour:11.41};const weeks=[1,2,3,4].map((n,i)=>({label:`Aug ${3+i*7}–${9+i*7}`,trackedHours:[40.47,40.53,40.18,40.23][i],activeDays:5,screenshotCount:[461,458,462,461][i],evidenceCoveragePercent:[97,95,96,96][i],activeDayCoveragePercent:100,categories:[{name:['Marketing / content','Listings / property','Files / documents','Marketing / content'][i],sharePercent:30}],topApps:[],notes:[]}));const a={period:{from:input.from,to:input.to,dayCount:dayCount(input.from,input.to)},connection:{id:'demo-main',name:'Demo Scrin Connection',provider:'scrin',type:'shared',employer:'',employerLocked:false,status:'demo'},metrics,evidence,projects:[],categories:[{name:'Marketing / content',sharePercent:30},{name:'Listings / property',sharePercent:22},{name:'Files / documents',sharePercent:16},{name:'Email & communication',sharePercent:13},{name:'CRM & lead follow-up',sharePercent:11},{name:'Research / AI',sharePercent:8}],apps:[],averageActivityLevel:72,notes:[],weeks,selectedScreenshotEvidence:[],analysisDisclosure:{activityRecordsAnalyzedPercent:100,screenshotMetadataAnalyzedPercent:100,screenshotImageContentAnalyzedPercent:0,screenshotImagesSelectedForVisualReview:0,screenshotImageSamplePercent:0,note:'Demo analytics use synthetic activity and screenshot metadata. No live screenshot images are sent to the AI.'},versions:{analysisVersion:ANALYSIS_VERSION,rulesVersion:RULES_VERSION}};a.review=assessment(a);return a}
+  if (env.SCRIN_CONNECTIONS_JSON) {
+    let parsed;
 
-export default{async fetch(request,env){const url=new URL(request.url),demo=env.DEMO_MODE!=='false';
-  if(url.pathname==='/api/health')return json({ok:true,mode:demo?'demo':'live',connectionCount:parseConnections(env).length,analysisVersion:ANALYSIS_VERSION,rulesVersion:RULES_VERSION,promptVersion:PROMPT_VERSION});
-  if(url.pathname==='/api/scrin/connections'){if(demo)return json({demo:true,connections:[{id:'demo-main',name:'Demo Scrin Connection',provider:'scrin',type:'shared',employer:'',employerLocked:false,status:'demo'}]});return json({demo:false,connections:parseConnections(env).map(publicConnection)});}
-  if(url.pathname==='/api/scrin/all-common'&&request.method==='POST'){if(demo){const c={id:'demo-main',name:'Demo Scrin Connection',provider:'scrin',type:'shared',employer:'',token:'demo'},n=normalizeCommon(demoCommon(),c);return json({demo:true,connections:[{...publicConnection(c),status:'connected',employeeCount:n.employees.length}],employees:n.employees,errors:[]})}const connections=parseConnections(env),employees=[],pub=[],errors=[];for(const c of connections){try{const r=await scrin(env,c.id,'/api/v2/GetCommonData',{}),n=normalizeCommon(r.data,c);employees.push(...n.employees);pub.push({...publicConnection(c),status:'connected',employeeCount:n.employees.length,companyCount:n.companies.length})}catch(err){errors.push({connectionId:c.id,connectionName:c.name,error:err.message});pub.push({...publicConnection(c),status:'error',employeeCount:0,error:err.message})}}return json({demo:false,connections:pub,employees,errors});}
-  if(url.pathname==='/api/scrin/activities'&&request.method==='POST'){try{const b=await readJson(request);if(!Array.isArray(b.ranges))return json({error:'Expected { connectionId, ranges: [...] }'},400);const r=await scrin(env,b.connectionId,'/api/v2/GetActivities',b.ranges);return json({connection:publicConnection(r.connection),activities:r.data})}catch(err){return json({error:err.message},500)}}
-  if(url.pathname==='/api/scrin/screenshots'&&request.method==='POST'){try{const b=await readJson(request);if(!Array.isArray(b.activityIds))return json({error:'Expected { connectionId, activityIds: [...] }'},400);const r=await scrin(env,b.connectionId,'/api/v2/GetScreenshots',b.activityIds);return json({connection:publicConnection(r.connection),screenshots:r.data})}catch(err){return json({error:err.message},500)}}
-  if(url.pathname==='/api/wgm/day-data'&&request.method==='POST'){try{const b=await readJson(request);if(demo)return json({demo:true,date:b.date,firstTracked:'8:03 AM',lastTracked:'5:12 PM',trackedSeconds:8.03*3600,activityCount:24,screenshotCount:96,sessions:[{from:'8:03 AM',to:'12:04 PM',seconds:4.016*3600},{from:'12:42 PM',to:'5:12 PM',seconds:4.5*3600}],screenshots:[]});if(!b.employmentId||!b.date)return json({error:'employmentId and date are required'},400);const off=Number(b.timezoneOffsetMinutes||0),range=epochRange(b.date,b.date,off),ar=await scrin(env,b.connectionId,'/api/v2/GetActivities',[{employmentId:String(b.employmentId),from:range.from,to:range.to}]),acts=Array.isArray(ar.data)?ar.data:[],shots=await screenshotsFor(env,b.connectionId,acts.map(a=>a.id)),iv=acts.filter(a=>duration(a)>0).sort((a,b)=>Number(a.from)-Number(b.from)),sessions=[];if(iv.length){let s=Number(iv[0].from),e=Number(iv[0].to);for(let i=1;i<iv.length;i++){const ns=Number(iv[i].from),ne=Number(iv[i].to);if(ns<=e+90)e=Math.max(e,ne);else{sessions.push({from:localTime(s,off),to:localTime(e,off),seconds:e-s});s=ns;e=ne}}sessions.push({from:localTime(s,off),to:localTime(e,off),seconds:e-s})}return json({demo:false,connection:publicConnection(ar.connection),date:b.date,firstTracked:iv.length?localTime(iv[0].from,off):'—',lastTracked:iv.length?localTime(Math.max(...iv.map(a=>Number(a.to))),off):'—',trackedSeconds:unionSeconds(acts),activityCount:acts.length,screenshotCount:shots.length,sessions,screenshots:shots.map(s=>{const apps=Array.isArray(s?.applications)?s.applications:[],fg=apps.find(a=>a?.fromScreen)||apps[0];return {id:s.id,activityId:s.activityId,taken:s.taken,time:localTime(s.taken,off),application:fg?.applicationName||'Screenshot',activityLevel:Number(s.activityLevel)||null,thumbUrl:s.thumbUrl||s.url||null,url:s.url||s.thumbUrl||null}})})}catch(err){return json({error:err.message},500)}}
-  if(url.pathname==='/api/wgm/period-analytics'&&request.method==='POST'){try{const b=await readJson(request);if(!b.employmentId||!b.from||!b.to)return json({error:'employmentId, from and to are required'},400);if(demo){const current=demoAnalytics(b),previous=b.includePrevious===false?null:demoAnalytics({...b,from:addDays(b.from,-dayCount(b.from,b.to)),to:addDays(b.from,-1),expectedHours:Number(b.previousExpectedHours||0)});if(previous){previous.metrics.trackedHours=154.27;previous.metrics.trackedSeconds=154.27*3600;previous.evidence.evidenceCoveragePercent=94;previous.evidence.screenshotCount=1760}return json({current,previous,comparison:comparison(current,previous),metadata:{generatedAt:new Date().toISOString(),analysisVersion:ANALYSIS_VERSION,rulesVersion:RULES_VERSION}})}const current=await analytics(env,b),previous=await previousAnalytics(env,b);return json({current,previous,comparison:comparison(current,previous),metadata:{generatedAt:new Date().toISOString(),analysisVersion:ANALYSIS_VERSION,rulesVersion:RULES_VERSION}})}catch(err){return json({error:err.message},500)}}
-  if(url.pathname==='/api/wgm/period-data'&&request.method==='POST'){try{const b=await readJson(request),a=demo?demoAnalytics(b):await analytics(env,b);return json({connection:a.connection,metrics:a.metrics,workstreams:a.categories.map(x=>[x.name,x.sharePercent]),apps:a.apps.map(x=>[x.name,x.sharePercent]),averageActivityLevel:a.averageActivityLevel,screenshotCount:a.evidence.screenshotCount,selectedScreenshotEvidence:a.selectedScreenshotEvidence,screenshotEvidenceSummary:{count:a.evidence.screenshotCount,evidenceCoveragePercent:a.evidence.evidenceCoveragePercent,activeDayCoveragePercent:a.evidence.activeDayCoveragePercent,topApplications:a.apps.slice(0,6)}})}catch(err){return json({error:err.message},500)}}
-  if(url.pathname==='/api/reports/generate'&&request.method==='POST'){const b=await readJson(request),g=await generateWithAI(env,b);return json({report:g.report,generatedBy:g.usedOpenAI?'openai':'wgm-fallback',requiresHumanReview:true,warning:g.warning,metadata:{generatedAt:new Date().toISOString(),model:env.OPENAI_MODEL||null,promptVersion:PROMPT_VERSION,visionScreenshotsSent:g.visionScreenshotsSent,analysisVersion:b.analytics?.versions?.analysisVersion||ANALYSIS_VERSION,rulesVersion:b.analytics?.versions?.rulesVersion||RULES_VERSION}})}
-  if(url.pathname==='/api/reports/release'&&request.method==='POST'){const b=await readJson(request);return json({status:'released',releaseId:`wgm_${Date.now()}`,deliveryEvent:'queued',ghlIntegrated:false,employeeId:b.employeeId||null,employer:b.employer||null,period:b.period||null,releasedAt:new Date().toISOString()})}
-  return env.ASSETS.fetch(request);
-}};
+    try {
+      parsed = JSON.parse(env.SCRIN_CONNECTIONS_JSON);
+    } catch {
+      throw new Error('SCRIN_CONNECTIONS_JSON is not valid JSON');
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error('SCRIN_CONNECTIONS_JSON must be a JSON array');
+    }
+
+    for (const raw of parsed) {
+      if (!raw?.id || !raw?.token) continue;
+
+      const type = raw.type === 'dedicated' ? 'dedicated' : 'shared';
+
+      if (type === 'dedicated' && !String(raw.employer || '').trim()) {
+        throw new Error(`Dedicated connection ${raw.id} requires an employer`);
+      }
+
+      connections.push({
+        id: String(raw.id),
+        name: String(raw.name || raw.id),
+        provider: 'scrin',
+        type,
+        employer: String(raw.employer || ''),
+        token: String(raw.token),
+        enabled: raw.enabled !== false,
+      });
+    }
+  }
+
+  if (!connections.length && env.SCRIN_TOKEN) {
+    connections.push({
+      id: 'wgh-main',
+      name: 'WGH Main Scrin Account',
+      provider: 'scrin',
+      type: 'shared',
+      employer: '',
+      token: String(env.SCRIN_TOKEN),
+      enabled: true,
+    });
+  }
+
+  return connections.filter((connection) => connection.enabled);
+}
+
+function publicConnection(connection) {
+  return {
+    id: connection.id,
+    name: connection.name,
+    provider: 'scrin',
+    type: connection.type,
+    employer: connection.employer || '',
+    employerLocked: connection.type === 'dedicated',
+    status: 'configured',
+  };
+}
+
+function getConnection(env, connectionId) {
+  const connections = parseConnections(env);
+
+  if (!connections.length) {
+    throw new Error('No Scrin connection is configured');
+  }
+
+  if (connectionId) {
+    const found = connections.find(
+      (connection) => connection.id === String(connectionId),
+    );
+
+    if (!found) {
+      throw new Error(`Unknown Scrin connection: ${connectionId}`);
+    }
+
+    return found;
+  }
+
+  if (connections.length === 1) {
+    return connections[0];
+  }
+
+  throw new Error(
+    'connectionId is required when more than one Scrin connection is configured',
+  );
+}
+
+async function scrinFetch(env, connectionId, path, body) {
+  const connection = getConnection(env, connectionId);
+  const base = (env.SCRIN_API_BASE_URL || 'https://scrin.io').replace(/\/$/, '');
+
+  const response = await fetch(base + path, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-SSM-Token': connection.token,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `Scrin ${response.status} (${connection.name}): ${text.slice(0, 300)}`,
+    );
+  }
+
+  let data = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Scrin returned non-JSON data from ${path}`);
+    }
+  }
+
+  return { connection, data };
+}
+
+function demoCommon() {
+  return {
+    companies: [
+      {
+        id: 477279,
+        name: 'WGH Scrin Account',
+        employments: [
+          {
+            id: 477279,
+            name: 'Maria Gadin',
+            email: 'masked@example.com',
+            registered: true,
+          },
+          {
+            id: 500002,
+            name: 'VA 2 — sync to reveal',
+            email: 'masked2@example.com',
+            registered: true,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function normalizeCommon(data, connection) {
+  const companies = Array.isArray(data?.companies)
+    ? data.companies
+    : Array.isArray(data)
+      ? data
+      : [];
+
+  const employees = [];
+
+  for (const company of companies) {
+    const employments = Array.isArray(company?.employments)
+      ? company.employments
+      : [];
+
+    for (const person of employments) {
+      employees.push({
+        id: `${connection.id}::${person.id}`,
+        connectionId: connection.id,
+        connectionName: connection.name,
+        connectionType: connection.type,
+        connectionEmployer: connection.employer || '',
+        employerLocked: connection.type === 'dedicated',
+        employmentId: person.id,
+        name: person.name || person.email || `Employment ${person.id}`,
+        email: person.email || null,
+        scrinCompanyId: company.id,
+        scrinCompany: company.name || '',
+        source:
+          connection.type === 'dedicated' ? 'Standalone WGM' : 'WGH Managed',
+        role: 'Virtual Assistant',
+        reportingStatus: 'Synced',
+        employer: connection.type === 'dedicated' ? connection.employer : '',
+      });
+    }
+  }
+
+  return { companies, employees };
+}
+
+function epochRange(from, to, offsetMinutes = 0) {
+  const start =
+    Date.parse(`${from}T00:00:00Z`) - Number(offsetMinutes || 0) * 60000;
+
+  const end =
+    Date.parse(`${to}T23:59:59Z`) - Number(offsetMinutes || 0) * 60000;
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    throw new Error('Invalid date range');
+  }
+
+  return {
+    from: Math.floor(start / 1000),
+    to: Math.floor(end / 1000),
+  };
+}
+
+function localDate(epochSeconds, offsetMinutes = 0) {
+  return new Date(
+    Number(epochSeconds) * 1000 + Number(offsetMinutes || 0) * 60000,
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+function localTimeLabel(epochSeconds, offsetMinutes = 0) {
+  if (epochSeconds === null || epochSeconds === undefined) return '—';
+
+  const date = new Date(
+    (Number(epochSeconds) + Number(offsetMinutes || 0) * 60) * 1000,
+  );
+
+  let hours = date.getUTCHours();
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+
+  hours %= 12;
+  if (!hours) hours = 12;
+
+  return `${hours}:${minutes} ${suffix}`;
+}
+
+function activityDuration(activity) {
+  const from = Number(activity?.from);
+  const to = Number(activity?.to);
+
+  return Number.isFinite(from) && Number.isFinite(to) && to > from
+    ? to - from
+    : 0;
+}
+
+function unionSeconds(activities = []) {
+  const intervals = activities
+    .map((activity) => [Number(activity.from), Number(activity.to)])
+    .filter(
+      ([from, to]) =>
+        Number.isFinite(from) && Number.isFinite(to) && to > from,
+    )
+    .sort((a, b) => a[0] - b[0]);
+
+  if (!intervals.length) return 0;
+
+  let total = 0;
+  let start = intervals[0][0];
+  let end = intervals[0][1];
+
+  for (let i = 1; i < intervals.length; i++) {
+    const [nextStart, nextEnd] = intervals[i];
+
+    if (nextStart <= end) {
+      end = Math.max(end, nextEnd);
+    } else {
+      total += end - start;
+      start = nextStart;
+      end = nextEnd;
+    }
+  }
+
+  return total + (end - start);
+}
+
+function summarizeActivities(activities = [], expectedHours = 0, offsetMinutes = 0) {
+  const trackedSeconds = unionSeconds(activities);
+  const trackedHours = trackedSeconds / 3600;
+  const days = new Set();
+
+  for (const activity of activities) {
+    if (!activityDuration(activity)) continue;
+    days.add(localDate(activity.from, offsetMinutes));
+  }
+
+  return {
+    trackedSeconds,
+    trackedHours,
+    activeDays: days.size,
+    expectedHours: Number(expectedHours || 0),
+    scheduleCoveragePercent:
+      Number(expectedHours) > 0
+        ? round(
+            Math.min(100, (trackedHours / Number(expectedHours)) * 100),
+            1,
+          )
+        : null,
+  };
+}
+
+async function fetchScreenshotsChunked(env, connectionId, activityIds = []) {
+  const output = [];
+  const ids = unique(activityIds);
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const result = await scrinFetch(
+      env,
+      connectionId,
+      '/api/v2/GetScreenshots',
+      ids.slice(i, i + 100),
+    );
+
+    if (Array.isArray(result.data)) {
+      output.push(...result.data);
+    }
+  }
+
+  const deduped = new Map();
+
+  for (const screenshot of output) {
+    const key =
+      screenshot?.id ||
+      `${screenshot?.activityId || 'activity'}:${screenshot?.taken || 0}`;
+
+    deduped.set(key, screenshot);
+  }
+
+  return [...deduped.values()].sort(
+    (a, b) => Number(a?.taken || 0) - Number(b?.taken || 0),
+  );
+}
+
+function applicationName(application) {
+  return String(application?.applicationName || 'Unknown').trim() || 'Unknown';
+}
+
+function summarizeScreenshots(screenshots = []) {
+  const apps = {};
+  let activityLevelTotal = 0;
+  let activityLevelCount = 0;
+
+  for (const screenshot of screenshots) {
+    const level = Number(screenshot?.activityLevel);
+
+    if (Number.isFinite(level)) {
+      activityLevelTotal += level;
+      activityLevelCount++;
+    }
+
+    const applications = Array.isArray(screenshot?.applications)
+      ? screenshot.applications
+      : [];
+
+    for (const application of applications) {
+      const name = applicationName(application);
+      const duration = Number(application?.duration || 0);
+      apps[name] =
+        (apps[name] || 0) + (Number.isFinite(duration) ? duration : 0);
+    }
+  }
+
+  const totalAppSeconds =
+    Object.values(apps).reduce((sum, value) => sum + value, 0) || 1;
+
+  return {
+    screenshotCount: screenshots.length,
+    averageActivityLevel: activityLevelCount
+      ? round(activityLevelTotal / activityLevelCount, 1)
+      : null,
+    apps: Object.entries(apps)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, seconds]) => ({
+        name,
+        seconds,
+        hours: round(seconds / 3600, 2),
+        sharePercent: round((seconds / totalAppSeconds) * 100, 1),
+      })),
+  };
+}
+
+function classifyText(text = '') {
+  const value = String(text || '').toLowerCase();
+
+  const rules = [
+    ['CRM & lead follow-up', /follow up boss|followupboss|hubspot|crm|lead|prospect|pipeline|appointment|dialer|sales/],
+    ['Email & communication', /gmail|outlook|email|mail|slack|whatsapp|message|communication/],
+    ['Listings / property', /zillow|redfin|realtor|mls|navica|property|listing|real estate|comparables|market analysis/],
+    ['Admin / operations', /admin|operations|calendar|schedule|data entry|quickbooks|notion|airtable|trello|asana|monday/],
+    ['Files / documents', /google docs|google drive|google sheets|sheets|excel|word|document|pdf|adobe|docusign|file|spreadsheet/],
+    ['Marketing / content', /canva|instagram|facebook|linkedin|social|marketing|content|graphic|post|campaign/],
+    ['Research / AI', /chatgpt|claude|gemini|ai\b|chrome|safari|firefox|browser|google search|research|web search/],
+    ['Meetings', /zoom|google meet|microsoft teams|meeting|conference/],
+  ];
+
+  for (const [category, regex] of rules) {
+    if (regex.test(value)) return category;
+  }
+
+  return 'Other business activity';
+}
+
+function buildCategorySummary(activities = [], screenshots = []) {
+  const weights = {};
+
+  for (const activity of activities) {
+    const duration = activityDuration(activity);
+    const note = String(activity?.note || '').trim();
+
+    if (!duration || !note) continue;
+
+    const category = classifyText(note);
+    weights[category] = (weights[category] || 0) + duration;
+  }
+
+  for (const screenshot of screenshots) {
+    const applications = Array.isArray(screenshot?.applications)
+      ? screenshot.applications
+      : [];
+
+    for (const application of applications) {
+      const duration = Number(application?.duration || 0);
+      if (!Number.isFinite(duration) || duration <= 0) continue;
+
+      const category = classifyText(applicationName(application));
+      weights[category] = (weights[category] || 0) + duration;
+    }
+  }
+
+  const total =
+    Object.values(weights).reduce((sum, value) => sum + value, 0) || 1;
+
+  return Object.entries(weights)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, weight]) => ({
+      name,
+      sharePercent: round((weight / total) * 100, 1),
+    }))
+    .slice(0, 8);
+}
+
+function buildEvidenceCoverage(activities = [], screenshots = [], offsetMinutes = 0) {
+  const screenshotActivityIds = new Set(
+    screenshots
+      .map((screenshot) => String(screenshot?.activityId || ''))
+      .filter(Boolean),
+  );
+
+  const trackedSeconds = unionSeconds(activities);
+  const coveredActivities = activities.filter((activity) =>
+    screenshotActivityIds.has(String(activity?.id || '')),
+  );
+  const coveredSeconds = unionSeconds(coveredActivities);
+
+  const activeDays = unique(
+    activities
+      .filter((activity) => activityDuration(activity) > 0)
+      .map((activity) => localDate(activity.from, offsetMinutes)),
+  );
+
+  const screenshotDays = unique(
+    screenshots
+      .filter((screenshot) => Number.isFinite(Number(screenshot?.taken)))
+      .map((screenshot) => localDate(screenshot.taken, offsetMinutes)),
+  );
+
+  return {
+    evidenceCoveragePercent: clamp(
+      trackedSeconds ? round((coveredSeconds / trackedSeconds) * 100, 1) : 0,
+      0,
+      100,
+    ),
+    activeDayCoveragePercent: clamp(
+      activeDays.length
+        ? round((screenshotDays.length / activeDays.length) * 100, 1)
+        : 0,
+      0,
+      100,
+    ),
+    trackedSeconds,
+    coveredTrackedSeconds: coveredSeconds,
+    activityRecords: activities.length,
+    activitiesWithScreenshots: coveredActivities.length,
+    activeDays: activeDays.length,
+    daysWithScreenshots: screenshotDays.length,
+    screenshotCount: screenshots.length,
+    screenshotDensityPerTrackedHour: trackedSeconds
+      ? round(screenshots.length / (trackedSeconds / 3600), 2)
+      : 0,
+  };
+}
+
+function mondayStart(dateString) {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  const day = date.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + diff);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatShortDate(dateString) {
+  return new Date(`${dateString}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function buildWeeklyAnalytics(
+  activities,
+  screenshots,
+  from,
+  to,
+  offsetMinutes = 0,
+) {
+  const groups = new Map();
+
+  const ensure = (key) => {
+    if (!groups.has(key)) {
+      groups.set(key, { activities: [], screenshots: [] });
+    }
+    return groups.get(key);
+  };
+
+  for (const activity of activities) {
+    if (!activityDuration(activity)) continue;
+    const day = localDate(activity.from, offsetMinutes);
+    ensure(mondayStart(day)).activities.push(activity);
+  }
+
+  for (const screenshot of screenshots) {
+    if (!Number.isFinite(Number(screenshot?.taken))) continue;
+    const day = localDate(screenshot.taken, offsetMinutes);
+    ensure(mondayStart(day)).screenshots.push(screenshot);
+  }
+
+  const fromMs = Date.parse(`${from}T00:00:00Z`);
+  const toMs = Date.parse(`${to}T00:00:00Z`);
+
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([weekStart, group]) => {
+      const rawWeekEnd = addDays(weekStart, 6);
+      const start =
+        Date.parse(`${weekStart}T00:00:00Z`) < fromMs ? from : weekStart;
+      const end =
+        Date.parse(`${rawWeekEnd}T00:00:00Z`) > toMs ? to : rawWeekEnd;
+
+      const coverage = buildEvidenceCoverage(
+        group.activities,
+        group.screenshots,
+        offsetMinutes,
+      );
+
+      return {
+        weekStart: start,
+        weekEnd: end,
+        label: `${formatShortDate(start)}–${formatShortDate(end)}`,
+        trackedHours: round(unionSeconds(group.activities) / 3600, 2),
+        activeDays: unique(
+          group.activities.map((activity) =>
+            localDate(activity.from, offsetMinutes),
+          ),
+        ).length,
+        screenshotCount: group.screenshots.length,
+        evidenceCoveragePercent: coverage.evidenceCoveragePercent,
+        activeDayCoveragePercent: coverage.activeDayCoveragePercent,
+        categories: buildCategorySummary(
+          group.activities,
+          group.screenshots,
+        ).slice(0, 6),
+        topApps: summarizeScreenshots(group.screenshots).apps.slice(0, 5),
+        notes: unique(
+          group.activities.map((activity) =>
+            String(activity?.note || '').trim(),
+          ),
+        ).slice(0, 5),
+      };
+    });
+}
+
+function selectVisionScreenshots(screenshots = [], offsetMinutes = 0, max = 12) {
+  const valid = screenshots
+    .filter(
+      (screenshot) =>
+        Number.isFinite(Number(screenshot?.taken)) &&
+        Boolean(screenshot?.url || screenshot?.thumbUrl),
+    )
+    .sort((a, b) => Number(a.taken) - Number(b.taken));
+
+  if (!valid.length || max <= 0) return [];
+
+  const byDay = new Map();
+
+  for (const screenshot of valid) {
+    const day = localDate(screenshot.taken, offsetMinutes);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(screenshot);
+  }
+
+  const dayKeys = [...byDay.keys()].sort();
+  const picked = [];
+  const seen = new Set();
+
+  const add = (screenshot) => {
+    if (!screenshot) return;
+    const id = String(
+      screenshot.id || `${screenshot.activityId || 'activity'}:${screenshot.taken}`,
+    );
+    if (seen.has(id)) return;
+    seen.add(id);
+    picked.push(screenshot);
+  };
+
+  const daySlots = Math.min(dayKeys.length, max);
+
+  for (let i = 0; i < daySlots; i++) {
+    const index =
+      daySlots === 1
+        ? 0
+        : Math.round((i * (dayKeys.length - 1)) / (daySlots - 1));
+    const screenshotsForDay = byDay.get(dayKeys[index]);
+    add(screenshotsForDay[Math.floor(screenshotsForDay.length / 2)]);
+  }
+
+  for (let i = 0; picked.length < max && i < valid.length; i++) {
+    const index = Math.round(
+      (i * (valid.length - 1)) / Math.max(1, max - 1),
+    );
+    add(valid[index]);
+  }
+
+  return picked
+    .slice(0, max)
+    .sort((a, b) => Number(a.taken) - Number(b.taken))
+    .map((screenshot) => {
+      const applications = Array.isArray(screenshot?.applications)
+        ? screenshot.applications
+        : [];
+      const foreground =
+        applications.find((application) => application?.fromScreen) ||
+        applications[0];
+
+      return {
+        screenshotId: String(
+          screenshot.id ||
+            `${screenshot.activityId || 'activity'}:${screenshot.taken}`,
+        ),
+        activityId: screenshot.activityId
+          ? String(screenshot.activityId)
+          : '',
+        taken: Number(screenshot.taken),
+        date: localDate(screenshot.taken, offsetMinutes),
+        time: localTimeLabel(screenshot.taken, offsetMinutes),
+        dateTime: `${localDate(screenshot.taken, offsetMinutes)} ${localTimeLabel(
+          screenshot.taken,
+          offsetMinutes,
+        )}`,
+        application: foreground?.applicationName || 'Screenshot',
+        activityLevel: Number.isFinite(Number(screenshot.activityLevel))
+          ? Number(screenshot.activityLevel)
+          : null,
+        imageUrl: screenshot.url || screenshot.thumbUrl || null,
+        thumbUrl: screenshot.thumbUrl || screenshot.url || null,
+      };
+    });
+}
+
+function reviewAssessment(analytics) {
+  const reasons = [];
+
+  if (analytics.metrics.trackedHours <= 0) {
+    reasons.push('No tracked time was returned for the selected period.');
+  }
+
+  if (
+    analytics.metrics.trackedHours > 0 &&
+    analytics.evidence.screenshotCount === 0
+  ) {
+    reasons.push('Tracked time exists but no screenshot evidence was returned.');
+  }
+
+  if (
+    analytics.metrics.trackedHours > 0 &&
+    analytics.evidence.activeDayCoveragePercent < 50
+  ) {
+    reasons.push(
+      'Screenshot evidence is limited across the active workdays in the selected period.',
+    );
+  }
+
+  return {
+    status: reasons.length ? 'Yellow' : 'Green',
+    reasons,
+    note: reasons.length
+      ? 'Evidence coverage should be reviewed before release.'
+      : 'No evidence-coverage issue was detected under the current prototype rules.',
+  };
+}
+
+async function buildPeriodAnalytics(env, input) {
+  const connectionId = input.connectionId;
+  const employmentId = input.employmentId;
+  const from = input.from;
+  const to = input.to;
+  const offsetMinutes = Number(input.timezoneOffsetMinutes || 0);
+  const expectedHours = Number(
+    input.adjustedExpectedHours ??
+      input.monthlyContext?.adjustedExpectedHours ??
+      input.expectedHours ??
+      0,
+  );
+
+  if (!employmentId || !from || !to) {
+    throw new Error('employmentId, from and to are required');
+  }
+
+  const range = epochRange(from, to, offsetMinutes);
+
+  const commonResult = await scrinFetch(
+    env,
+    connectionId,
+    '/api/v2/GetCommonData',
+    {},
+  );
+
+  const activityResult = await scrinFetch(
+    env,
+    connectionId,
+    '/api/v2/GetActivities',
+    [
+      {
+        employmentId: String(employmentId),
+        from: range.from,
+        to: range.to,
+      },
+    ],
+  );
+
+  const activities = Array.isArray(activityResult.data)
+    ? activityResult.data
+    : [];
+
+  const screenshots = await fetchScreenshotsChunked(
+    env,
+    connectionId,
+    activities.map((activity) => activity.id),
+  );
+
+  const metrics = summarizeActivities(
+    activities,
+    expectedHours,
+    offsetMinutes,
+  );
+
+  const evidence = buildEvidenceCoverage(
+    activities,
+    screenshots,
+    offsetMinutes,
+  );
+
+  const screenshotSummary = summarizeScreenshots(screenshots);
+
+  const selectedScreenshotEvidence = selectVisionScreenshots(
+    screenshots,
+    offsetMinutes,
+    Number(input.maxVisionScreenshots || 12),
+  );
+
+  const screenshotDates = unique(
+    screenshots
+      .filter((screenshot) => Number.isFinite(Number(screenshot?.taken)))
+      .map((screenshot) => localDate(screenshot.taken, offsetMinutes)),
+  ).sort();
+
+  const analytics = {
+    period: {
+      from,
+      to,
+      dayCount: dayCountInclusive(from, to),
+    },
+    connection: publicConnection(commonResult.connection),
+    metrics,
+    evidence,
+    categories: buildCategorySummary(activities, screenshots),
+    apps: screenshotSummary.apps.slice(0, 15),
+    averageActivityLevel: screenshotSummary.averageActivityLevel,
+    notes: unique(
+      activities.map((activity) => String(activity?.note || '').trim()),
+    ).slice(0, 30),
+    weeks: buildWeeklyAnalytics(
+      activities,
+      screenshots,
+      from,
+      to,
+      offsetMinutes,
+    ),
+    screenshotDates,
+    selectedScreenshotEvidence,
+    analysisDisclosure: {
+      activityRecordsAnalyzedPercent: 100,
+      screenshotMetadataAnalyzedPercent: screenshots.length ? 100 : 0,
+      screenshotImageContentAnalyzedPercent: 0,
+      screenshotImagesSelectedForVisualReview:
+        selectedScreenshotEvidence.length,
+      screenshotImageSamplePercent: screenshots.length
+        ? round((selectedScreenshotEvidence.length / screenshots.length) * 100, 2)
+        : 0,
+      note:
+        'WGM calculations use all returned activity and screenshot metadata. A selected screenshot-image sample is sent to the visual screening step; human review remains mandatory.',
+    },
+    versions: {
+      analysisVersion: ANALYSIS_VERSION,
+      rulesVersion: RULES_VERSION,
+    },
+  };
+
+  analytics.review = reviewAssessment(analytics);
+
+  return analytics;
+}
+
+function fallbackReport(input) {
+  const analytics = input.analytics || {};
+  const selected = Array.isArray(analytics.selectedScreenshotEvidence)
+    ? analytics.selectedScreenshotEvidence
+    : [];
+  const hasVisual = selected.length > 0;
+
+  const unavailable = 'No screenshot images were supplied to the visual screening step.';
+
+  return {
+    overallResult: hasVisual ? 'clear' : 'review',
+    screeningHeadline: hasVisual
+      ? 'No suspicious patterns found.'
+      : 'Human review required.',
+    screeningSubtext: hasVisual
+      ? 'In the screenshots reviewed for this report.'
+      : 'Visual screenshot screening was not available for this report run.',
+    checks: [
+      {
+        key: 'repeated_frozen',
+        status: hasVisual ? 'clear' : 'not_assessed',
+        detail: hasVisual
+          ? 'No concerning unchanged-screen sequence was identified in the selected visual sample.'
+          : unavailable,
+      },
+      {
+        key: 'repetitive_cycling',
+        status: hasVisual ? 'clear' : 'not_assessed',
+        detail: hasVisual
+          ? 'No suspicious back-and-forth screen pattern was identified in the selected visual sample.'
+          : unavailable,
+      },
+      {
+        key: 'activity_simulation',
+        status: hasVisual ? 'clear' : 'not_assessed',
+        detail: hasVisual
+          ? 'No visible mouse-mover, auto-clicker or activity-simulation interface was observed in the selected visual sample.'
+          : unavailable,
+      },
+      {
+        key: 'repeated_across_days',
+        status: hasVisual ? 'clear' : 'not_assessed',
+        detail: hasVisual
+          ? 'No concerning replay-like screenshot sequence was identified across the selected capture dates.'
+          : unavailable,
+      },
+    ],
+    findings: [],
+    scopeNote:
+      'Review scope: supplied Scrin screenshot evidence and verified metadata for the selected period. Hidden automation and physical mouse movers may not be visible.',
+  };
+}
+
+function buildVisionContent(input, fallbackReference) {
+  const analytics = input.analytics || {};
+  const screenshots = Array.isArray(analytics.selectedScreenshotEvidence)
+    ? analytics.selectedScreenshotEvidence
+    : [];
+
+  const clean = {
+    employee: input.employee || null,
+    period: input.period || analytics.period || null,
+    analytics: {
+      period: analytics.period || null,
+      metrics: analytics.metrics || null,
+      evidence: analytics.evidence || null,
+      screenshotDates: analytics.screenshotDates || [],
+      selectedScreenshotEvidence: screenshots.map((screenshot) => ({
+        screenshotId: screenshot.screenshotId,
+        activityId: screenshot.activityId,
+        date: screenshot.date,
+        time: screenshot.time,
+        dateTime: screenshot.dateTime,
+        application: screenshot.application,
+        activityLevel: screenshot.activityLevel,
+      })),
+    },
+    fallbackReference,
+  };
+
+  const content = [
+    {
+      type: 'input_text',
+      text:
+        'Screen the supplied screenshot sample using the four required White Glove Monitor checks. The screenshots are a selected sample from the reporting period, not necessarily every capture. Return only supported findings. Do not treat routine repeated business applications or similar work screens as suspicious.\n\n' +
+        JSON.stringify(clean),
+    },
+  ];
+
+  for (const screenshot of screenshots) {
+    if (!screenshot?.imageUrl) continue;
+
+    content.push({
+      type: 'input_text',
+      text: `SCREENSHOT — id=${screenshot.screenshotId}; dateTime=${screenshot.dateTime}; applicationMetadata=${screenshot.application}`,
+    });
+
+    content.push({
+      type: 'input_image',
+      image_url: screenshot.imageUrl,
+      detail: 'auto',
+    });
+  }
+
+  return content;
+}
+
+async function generateWithAI(env, input) {
+  const fallback = fallbackReport(input);
+
+  if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
+    return {
+      report: fallback,
+      usedOpenAI: false,
+      visionScreenshotsSent: 0,
+      warning: null,
+    };
+  }
+
+  const content = buildVisionContent(input, fallback);
+  const visionScreenshotsSent = content.filter(
+    (item) => item.type === 'input_image',
+  ).length;
+
+  if (!visionScreenshotsSent) {
+    return {
+      report: fallback,
+      usedOpenAI: false,
+      visionScreenshotsSent: 0,
+      warning: 'No screenshot images were available for visual screening.',
+    };
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL,
+        input: [
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content,
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'wgm_fraud_screening_report',
+            strict: true,
+            schema: REPORT_SCHEMA,
+          },
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        `OpenAI ${response.status}: ${JSON.stringify(data).slice(0, 500)}`,
+      );
+    }
+
+    const outputText =
+      data.output_text ||
+      data.output
+        ?.flatMap((item) => item.content || [])
+        .find((item) => item.type === 'output_text')?.text;
+
+    if (!outputText) {
+      throw new Error('No structured screening report returned');
+    }
+
+    return {
+      report: JSON.parse(outputText),
+      usedOpenAI: true,
+      visionScreenshotsSent,
+      warning: null,
+    };
+  } catch (error) {
+    return {
+      report: fallback,
+      usedOpenAI: false,
+      visionScreenshotsSent: 0,
+      warning: `OpenAI fallback used: ${error.message}`,
+    };
+  }
+}
+
+function demoPeriodAnalytics(input) {
+  const metrics = {
+    trackedSeconds: 161.42 * 3600,
+    trackedHours: 161.42,
+    activeDays: 20,
+    expectedHours: Number(input.expectedHours || 160),
+    scheduleCoveragePercent: 100,
+  };
+
+  const evidence = {
+    evidenceCoveragePercent: 96,
+    activeDayCoveragePercent: 100,
+    trackedSeconds: metrics.trackedSeconds,
+    coveredTrackedSeconds: metrics.trackedSeconds * 0.96,
+    activityRecords: 482,
+    activitiesWithScreenshots: 463,
+    activeDays: 20,
+    daysWithScreenshots: 19,
+    screenshotCount: 1100,
+    screenshotDensityPerTrackedHour: 6.82,
+  };
+
+  const analytics = {
+    period: {
+      from: input.from,
+      to: input.to,
+      dayCount: dayCountInclusive(input.from, input.to),
+    },
+    connection: {
+      id: 'demo-main',
+      name: 'Demo Scrin Connection',
+      provider: 'scrin',
+      type: 'shared',
+      employer: '',
+      employerLocked: false,
+      status: 'demo',
+    },
+    metrics,
+    evidence,
+    categories: [],
+    apps: [],
+    averageActivityLevel: 72,
+    notes: [],
+    weeks: [],
+    screenshotDates: [
+      '2026-09-01',
+      '2026-09-02',
+      '2026-09-03',
+      '2026-09-04',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+      '2026-09-14',
+      '2026-09-15',
+      '2026-09-16',
+      '2026-09-17',
+      '2026-09-18',
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-28',
+      '2026-09-29',
+    ],
+    selectedScreenshotEvidence: [],
+    analysisDisclosure: {
+      activityRecordsAnalyzedPercent: 100,
+      screenshotMetadataAnalyzedPercent: 100,
+      screenshotImageContentAnalyzedPercent: 0,
+      screenshotImagesSelectedForVisualReview: 0,
+      screenshotImageSamplePercent: 0,
+      note: 'Demo analytics use synthetic data. No live images are sent.',
+    },
+    versions: {
+      analysisVersion: ANALYSIS_VERSION,
+      rulesVersion: RULES_VERSION,
+    },
+  };
+
+  analytics.review = reviewAssessment(analytics);
+  return analytics;
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const demo = env.DEMO_MODE !== 'false';
+
+    if (url.pathname === '/api/health') {
+      return json({
+        ok: true,
+        mode: demo ? 'demo' : 'live',
+        connectionCount: parseConnections(env).length,
+        analysisVersion: ANALYSIS_VERSION,
+        rulesVersion: RULES_VERSION,
+        promptVersion: PROMPT_VERSION,
+      });
+    }
+
+    if (url.pathname === '/api/scrin/connections') {
+      if (demo) {
+        return json({
+          demo: true,
+          connections: [
+            {
+              id: 'demo-main',
+              name: 'Demo Scrin Connection',
+              provider: 'scrin',
+              type: 'shared',
+              employer: '',
+              employerLocked: false,
+              status: 'demo',
+            },
+          ],
+        });
+      }
+
+      return json({
+        demo: false,
+        connections: parseConnections(env).map(publicConnection),
+      });
+    }
+
+    if (
+      url.pathname === '/api/scrin/all-common' &&
+      request.method === 'POST'
+    ) {
+      if (demo) {
+        const connection = {
+          id: 'demo-main',
+          name: 'Demo Scrin Connection',
+          provider: 'scrin',
+          type: 'shared',
+          employer: '',
+          token: 'demo',
+        };
+
+        const normalized = normalizeCommon(demoCommon(), connection);
+
+        return json({
+          demo: true,
+          connections: [
+            {
+              ...publicConnection(connection),
+              status: 'connected',
+              employeeCount: normalized.employees.length,
+            },
+          ],
+          employees: normalized.employees,
+          errors: [],
+        });
+      }
+
+      const connections = parseConnections(env);
+      const employees = [];
+      const publicConnections = [];
+      const errors = [];
+
+      for (const connection of connections) {
+        try {
+          const result = await scrinFetch(
+            env,
+            connection.id,
+            '/api/v2/GetCommonData',
+            {},
+          );
+
+          const normalized = normalizeCommon(result.data, connection);
+          employees.push(...normalized.employees);
+
+          publicConnections.push({
+            ...publicConnection(connection),
+            status: 'connected',
+            employeeCount: normalized.employees.length,
+            companyCount: normalized.companies.length,
+          });
+        } catch (error) {
+          errors.push({
+            connectionId: connection.id,
+            connectionName: connection.name,
+            error: error.message,
+          });
+
+          publicConnections.push({
+            ...publicConnection(connection),
+            status: 'error',
+            employeeCount: 0,
+            error: error.message,
+          });
+        }
+      }
+
+      return json({
+        demo: false,
+        connections: publicConnections,
+        employees,
+        errors,
+      });
+    }
+
+    if (
+      url.pathname === '/api/scrin/activities' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+
+        if (!Array.isArray(body.ranges)) {
+          return json(
+            {
+              error:
+                'Expected { connectionId, ranges: [{ employmentId, from, to }] }',
+            },
+            400,
+          );
+        }
+
+        const result = await scrinFetch(
+          env,
+          body.connectionId,
+          '/api/v2/GetActivities',
+          body.ranges,
+        );
+
+        return json({
+          connection: publicConnection(result.connection),
+          activities: result.data,
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/scrin/screenshots' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+
+        if (!Array.isArray(body.activityIds)) {
+          return json(
+            {
+              error: 'Expected { connectionId, activityIds: [...] }',
+            },
+            400,
+          );
+        }
+
+        const result = await scrinFetch(
+          env,
+          body.connectionId,
+          '/api/v2/GetScreenshots',
+          body.activityIds,
+        );
+
+        return json({
+          connection: publicConnection(result.connection),
+          screenshots: result.data,
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/wgm/day-data' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+
+        if (demo) {
+          return json({
+            demo: true,
+            date: body.date,
+            firstTracked: '8:03 AM',
+            lastTracked: '5:12 PM',
+            trackedSeconds: 8.03 * 3600,
+            activityCount: 24,
+            screenshotCount: 96,
+            sessions: [
+              {
+                from: '8:03 AM',
+                to: '12:04 PM',
+                seconds: 4.016 * 3600,
+              },
+              {
+                from: '12:42 PM',
+                to: '5:12 PM',
+                seconds: 4.5 * 3600,
+              },
+            ],
+            screenshots: [],
+          });
+        }
+
+        if (!body.employmentId || !body.date) {
+          return json(
+            {
+              error: 'employmentId and date are required',
+            },
+            400,
+          );
+        }
+
+        const offsetMinutes = Number(body.timezoneOffsetMinutes || 0);
+        const range = epochRange(body.date, body.date, offsetMinutes);
+
+        const activityResult = await scrinFetch(
+          env,
+          body.connectionId,
+          '/api/v2/GetActivities',
+          [
+            {
+              employmentId: String(body.employmentId),
+              from: range.from,
+              to: range.to,
+            },
+          ],
+        );
+
+        const activities = Array.isArray(activityResult.data)
+          ? activityResult.data
+          : [];
+
+        const screenshots = await fetchScreenshotsChunked(
+          env,
+          body.connectionId,
+          activities.map((activity) => activity.id),
+        );
+
+        const intervals = activities
+          .filter((activity) => activityDuration(activity) > 0)
+          .sort((a, b) => Number(a.from) - Number(b.from));
+
+        const sessions = [];
+
+        if (intervals.length) {
+          let start = Number(intervals[0].from);
+          let end = Number(intervals[0].to);
+
+          for (let i = 1; i < intervals.length; i++) {
+            const nextStart = Number(intervals[i].from);
+            const nextEnd = Number(intervals[i].to);
+
+            if (nextStart <= end + 90) {
+              end = Math.max(end, nextEnd);
+            } else {
+              sessions.push({
+                from: localTimeLabel(start, offsetMinutes),
+                to: localTimeLabel(end, offsetMinutes),
+                seconds: end - start,
+              });
+              start = nextStart;
+              end = nextEnd;
+            }
+          }
+
+          sessions.push({
+            from: localTimeLabel(start, offsetMinutes),
+            to: localTimeLabel(end, offsetMinutes),
+            seconds: end - start,
+          });
+        }
+
+        return json({
+          demo: false,
+          connection: publicConnection(activityResult.connection),
+          date: body.date,
+          firstTracked: intervals.length
+            ? localTimeLabel(intervals[0].from, offsetMinutes)
+            : '—',
+          lastTracked: intervals.length
+            ? localTimeLabel(
+                Math.max(...intervals.map((activity) => Number(activity.to))),
+                offsetMinutes,
+              )
+            : '—',
+          trackedSeconds: unionSeconds(activities),
+          activityCount: activities.length,
+          screenshotCount: screenshots.length,
+          sessions,
+          screenshots: screenshots.map((screenshot) => {
+            const applications = Array.isArray(screenshot?.applications)
+              ? screenshot.applications
+              : [];
+            const foreground =
+              applications.find((application) => application?.fromScreen) ||
+              applications[0];
+
+            return {
+              id: screenshot.id,
+              activityId: screenshot.activityId,
+              taken: screenshot.taken,
+              time: localTimeLabel(screenshot.taken, offsetMinutes),
+              application: foreground?.applicationName || 'Screenshot',
+              activityLevel: Number(screenshot.activityLevel) || null,
+              thumbUrl: screenshot.thumbUrl || screenshot.url || null,
+              url: screenshot.url || screenshot.thumbUrl || null,
+            };
+          }),
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/wgm/period-analytics' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+
+        if (!body.employmentId || !body.from || !body.to) {
+          return json(
+            {
+              error: 'employmentId, from and to are required',
+            },
+            400,
+          );
+        }
+
+        const current = demo
+          ? demoPeriodAnalytics(body)
+          : await buildPeriodAnalytics(env, body);
+
+        return json({
+          current,
+          previous: null,
+          comparison: { available: false },
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            analysisVersion: ANALYSIS_VERSION,
+            rulesVersion: RULES_VERSION,
+          },
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/wgm/period-data' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+        const analytics = demo
+          ? demoPeriodAnalytics(body)
+          : await buildPeriodAnalytics(env, body);
+
+        return json({
+          connection: analytics.connection,
+          metrics: analytics.metrics,
+          workstreams: analytics.categories.map((item) => [
+            item.name,
+            item.sharePercent,
+          ]),
+          apps: analytics.apps.map((item) => [item.name, item.sharePercent]),
+          averageActivityLevel: analytics.averageActivityLevel,
+          screenshotCount: analytics.evidence.screenshotCount,
+          screenshotDates: analytics.screenshotDates,
+          selectedScreenshotEvidence: analytics.selectedScreenshotEvidence,
+          screenshotEvidenceSummary: {
+            count: analytics.evidence.screenshotCount,
+            evidenceCoveragePercent:
+              analytics.evidence.evidenceCoveragePercent,
+            activeDayCoveragePercent:
+              analytics.evidence.activeDayCoveragePercent,
+            topApplications: analytics.apps.slice(0, 6),
+          },
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/reports/generate' &&
+      request.method === 'POST'
+    ) {
+      try {
+        const body = await readJson(request);
+        const generated = await generateWithAI(env, body);
+
+        return json({
+          report: generated.report,
+          generatedBy: generated.usedOpenAI ? 'openai' : 'wgm-fallback',
+          requiresHumanReview: true,
+          warning: generated.warning,
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            model: env.OPENAI_MODEL || null,
+            promptVersion: PROMPT_VERSION,
+            visionScreenshotsSent: generated.visionScreenshotsSent,
+            analysisVersion:
+              body.analytics?.versions?.analysisVersion || ANALYSIS_VERSION,
+            rulesVersion:
+              body.analytics?.versions?.rulesVersion || RULES_VERSION,
+            reportType: 'fraud_screening_activity_review',
+          },
+        });
+      } catch (error) {
+        return json({ error: error.message }, 500);
+      }
+    }
+
+    if (
+      url.pathname === '/api/reports/release' &&
+      request.method === 'POST'
+    ) {
+      const body = await readJson(request);
+
+      return json({
+        status: 'released',
+        releaseId: `wgm_${Date.now()}`,
+        deliveryEvent: 'queued',
+        ghlIntegrated: false,
+        employeeId: body.employeeId || null,
+        employer: body.employer || null,
+        period: body.period || null,
+        releasedAt: new Date().toISOString(),
+      });
+    }
+
+    return env.ASSETS.fetch(request);
+  },
+};
