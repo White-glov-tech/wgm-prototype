@@ -8,6 +8,10 @@ binding = "ASSETS"
 
 [vars]
 DEMO_MODE = "false"
+OPENAI_SCREENING_MODEL = "gpt-5.6-luna"
 SCRIN_API_BASE_URL = "https://scrin.io"
-# Set OPENAI_MODEL in Cloudflare when enabling live AI generation.
-# Keep API keys/tokens in Wrangler secrets, never here.
+
+# Keep API keys/tokens in Cloudflare secrets, never here.
+# Required secrets:
+# OPENAI_API_KEY
+# SCRIN_TOKEN
