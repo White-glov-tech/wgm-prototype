@@ -2663,11 +2663,1248 @@ async function runBatchPool(
   );
 }
 
+function wgmPrepOffsetMs(ms, tz) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(ms));
+  const m = {};
+  for (const p of parts) if (p.type !== 'literal') m[p.type] = Number(p.value);
+  return Date.UTC(m.year, m.month - 1, m.day, m.hour, m.minute, m.second) - ms;
+}
+
+function wgmPrepZonedUtc(date, tz) {
+  const [y, m, d] = String(date).split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d);
+  let off = wgmPrepOffsetMs(guess, tz);
+  let utc = guess - off;
+  const off2 = wgmPrepOffsetMs(utc, tz);
+  if (off2 !== off) utc = guess - off2;
+  return utc;
+}
+
+function wgmPrepAddDays(date, n) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function wgmPrepRange(from, to, tz) {
+  return {
+    from: Math.floor(wgmPrepZonedUtc(from, tz) / 1000),
+    to: Math.floor((wgmPrepZonedUtc(wgmPrepAddDays(to, 1), tz) - 1000) / 1000),
+  };
+}
+
+function wgmPrepLocalDate(sec, tz) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(Number(sec) * 1000));
+  const m = {};
+  for (const p of parts) if (p.type !== 'literal') m[p.type] = p.value;
+  return `${m.year}-${m.month}-${m.day}`;
+}
+
+function wgmPrepLocalTime(sec, tz) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(new Date(Number(sec) * 1000));
+}
+
+function wgmPrepClipActivities(raw, range) {
+  const used = [];
+  let outside = 0, clipped = 0, invalid = 0;
+
+  for (const a of raw) {
+    const f = Number(a?.from);
+    const t = Number(a?.to);
+
+    if (!Number.isFinite(f) || !Number.isFinite(t) || t <= f) {
+      invalid++;
+      continue;
+    }
+
+    const from = Math.max(f, range.from);
+    const to = Math.min(t, range.to);
+
+    if (to <= from) {
+      outside++;
+      continue;
+    }
+
+    if (from !== f || to !== t) clipped++;
+
+    used.push({
+      ...a,
+      from,
+      to,
+      _originalFrom: f,
+      _originalTo: t,
+    });
+  }
+
+  return { used, outside, clipped, invalid };
+}
+
+function wgmPrepUnionSeconds(activities = []) {
+  const x = activities
+    .map((a) => [Number(a?.from), Number(a?.to)])
+    .filter(([f, t]) => Number.isFinite(f) && Number.isFinite(t) && t > f)
+    .sort((a, b) => a[0] - b[0]);
+
+  if (!x.length) return 0;
+
+  let total = 0;
+  let [s, e] = x[0];
+
+  for (let i = 1; i < x.length; i++) {
+    const [ns, ne] = x[i];
+
+    if (ns <= e) {
+      e = Math.max(e, ne);
+    } else {
+      total += e - s;
+      s = ns;
+      e = ne;
+    }
+  }
+
+  return total + e - s;
+}
+
+function wgmPrepHash32(value) {
+  let h = 0x811c9dc5;
+
+  for (const c of String(value || '')) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 0x01000193);
+  }
+
+  return h >>> 0;
+}
+
+function wgmPrepRng32(seed) {
+  let a = seed >>> 0;
+
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function wgmPrepShuffle(items, rng) {
+  const x = [...items];
+
+  for (let i = x.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [x[i], x[j]] = [x[j], x[i]];
+  }
+
+  return x;
+}
+
+function wgmPrepHumanSample(manifest, key) {
+  if (!manifest.length) {
+    return {
+      target: 0,
+      count: 0,
+      screenshots: [],
+    };
+  }
+
+  const rng = wgmPrepRng32(
+    wgmPrepHash32(`${key}|human`)
+  );
+
+  const wanted =
+    30 +
+    Math.floor(rng() * 37);
+
+  const target =
+    Math.min(
+      manifest.length,
+      wanted
+    );
+
+  const byDate = new Map();
+
+  for (const item of manifest) {
+    if (!byDate.has(item.date)) {
+      byDate.set(item.date, []);
+    }
+
+    byDate
+      .get(item.date)
+      .push(item);
+  }
+
+  const pools =
+    wgmPrepShuffle(
+      [...byDate.keys()].sort(),
+      rng
+    ).map((date) => ({
+      items:
+        wgmPrepShuffle(
+          byDate.get(date),
+          rng
+        ),
+      i: 0,
+    }));
+
+  const selected = [];
+  const seen = new Set();
+  let progress = true;
+
+  while (
+    selected.length < target &&
+    progress
+  ) {
+    progress = false;
+
+    for (const pool of pools) {
+      while (
+        pool.i <
+        pool.items.length
+      ) {
+        const item =
+          pool.items[
+            pool.i++
+          ];
+
+        if (
+          !seen.has(
+            item.screenshotId
+          )
+        ) {
+          seen.add(
+            item.screenshotId
+          );
+
+          selected.push(
+            item
+          );
+
+          progress = true;
+          break;
+        }
+      }
+
+      if (
+        selected.length >=
+        target
+      ) {
+        break;
+      }
+    }
+  }
+
+  return {
+    target: wanted,
+    count: selected.length,
+    screenshots:
+      selected.sort(
+        (a, b) =>
+          a.taken -
+          b.taken
+      ),
+  };
+}
+
+function wgmPrepDedupeScreenshots(shots = []) {
+  const map =
+    new Map();
+
+  for (const s of shots) {
+    const key =
+      String(
+        s?.id ||
+        `${s?.activityId || 'activity'}:${s?.taken || 0}:${s?.url || s?.thumbUrl || ''}`
+      );
+
+    if (
+      !map.has(key)
+    ) {
+      map.set(
+        key,
+        s
+      );
+    }
+  }
+
+  return [
+    ...map.values()
+  ].sort(
+    (a, b) =>
+      Number(
+        a?.taken ||
+        0
+      ) -
+      Number(
+        b?.taken ||
+        0
+      )
+  );
+}
+
+function wgmPrepManifest(shots, tz) {
+  return shots
+    .filter(
+      (s) =>
+        Number.isFinite(
+          Number(
+            s?.taken
+          )
+        )
+    )
+    .sort(
+      (a, b) =>
+        Number(
+          a.taken
+        ) -
+        Number(
+          b.taken
+        )
+    )
+    .map(
+      (
+        s,
+        index
+      ) => {
+        const apps =
+          Array.isArray(
+            s?.applications
+          )
+            ? s.applications
+            : [];
+
+        const fg =
+          apps.find(
+            (a) =>
+              a?.fromScreen
+          ) ||
+          apps[0];
+
+        const date =
+          wgmPrepLocalDate(
+            s.taken,
+            tz
+          );
+
+        const time =
+          wgmPrepLocalTime(
+            s.taken,
+            tz
+          );
+
+        return {
+          index,
+
+          screenshotId:
+            String(
+              s.id ||
+              `${s.activityId || 'activity'}:${s.taken}`
+            ),
+
+          activityId:
+            s.activityId
+              ? String(
+                  s.activityId
+                )
+              : '',
+
+          taken:
+            Number(
+              s.taken
+            ),
+
+          date,
+
+          time,
+
+          dateTime:
+            `${date} ${time}`,
+
+          application:
+            fg?.applicationName ||
+            'Screenshot',
+
+          activityLevel:
+            Number.isFinite(
+              Number(
+                s.activityLevel
+              )
+            )
+              ? Number(
+                  s.activityLevel
+                )
+              : null,
+
+          imageUrl:
+            s.url ||
+            null,
+
+          thumbUrl:
+            s.thumbUrl ||
+            null,
+        };
+      }
+    );
+}
+
+async function wgmPrepFetch(
+  url,
+  options = {},
+  timeoutMs = 10000
+) {
+  const controller =
+    new AbortController();
+
+  const timer =
+    setTimeout(
+      () =>
+        controller.abort(),
+      timeoutMs
+    );
+
+  try {
+    return await fetchJson(
+      url,
+      {
+        ...options,
+        signal:
+          controller.signal,
+      }
+    );
+
+  } catch (error) {
+    if (
+      error?.name ===
+      'AbortError'
+    ) {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)} seconds`
+      );
+    }
+
+    throw error;
+
+  } finally {
+    clearTimeout(
+      timer
+    );
+  }
+}
+
+async function wgmPrepFetchScreenshotIds(
+  connectionId,
+  activityIds
+) {
+  const ids =
+    [
+      ...new Set(
+        (
+          activityIds ||
+          []
+        )
+          .map(String)
+          .filter(Boolean)
+      )
+    ];
+
+  if (!ids.length) {
+    return {
+      screenshots: [],
+      failedActivityIds: [],
+    };
+  }
+
+  const call =
+    () =>
+      wgmPrepFetch(
+        '/api/scrin/screenshots',
+        {
+          method:
+            'POST',
+
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+
+          body:
+            JSON.stringify({
+              connectionId,
+              activityIds:
+                ids,
+            }),
+        },
+
+        ids.length === 1
+          ? 15000
+          : 9000
+      );
+
+  try {
+    const result =
+      await call();
+
+    return {
+      screenshots:
+        Array.isArray(
+          result?.screenshots
+        )
+          ? result.screenshots
+          : [],
+
+      failedActivityIds:
+        [],
+    };
+
+  } catch (error) {
+    if (
+      ids.length === 1
+    ) {
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            600
+          )
+      );
+
+      try {
+        const retry =
+          await call();
+
+        return {
+          screenshots:
+            Array.isArray(
+              retry?.screenshots
+            )
+              ? retry.screenshots
+              : [],
+
+          failedActivityIds:
+            [],
+        };
+
+      } catch {
+        return {
+          screenshots:
+            [],
+
+          failedActivityIds:
+            ids,
+        };
+      }
+    }
+
+    const mid =
+      Math.ceil(
+        ids.length /
+        2
+      );
+
+    const left =
+      await wgmPrepFetchScreenshotIds(
+        connectionId,
+        ids.slice(
+          0,
+          mid
+        )
+      );
+
+    const right =
+      await wgmPrepFetchScreenshotIds(
+        connectionId,
+        ids.slice(mid)
+      );
+
+    return {
+      screenshots: [
+        ...left.screenshots,
+        ...right.screenshots,
+      ],
+
+      failedActivityIds: [
+        ...left.failedActivityIds,
+        ...right.failedActivityIds,
+      ],
+    };
+  }
+}
+
+async function wgmPrepCollectScreenshots(
+  connectionId,
+  activityIds
+) {
+  const ids =
+    [
+      ...new Set(
+        (
+          activityIds ||
+          []
+        )
+          .map(String)
+          .filter(Boolean)
+      )
+    ];
+
+  const chunks = [];
+
+  for (
+    let i = 0;
+    i < ids.length;
+    i += 8
+  ) {
+    chunks.push(
+      ids.slice(
+        i,
+        i + 8
+      )
+    );
+  }
+
+  const results =
+    new Array(
+      chunks.length
+    );
+
+  let next = 0;
+  let completed = 0;
+
+  async function workerLoop() {
+    while (true) {
+      const index =
+        next++;
+
+      if (
+        index >=
+        chunks.length
+      ) {
+        return;
+      }
+
+      results[index] =
+        await wgmPrepFetchScreenshotIds(
+          connectionId,
+          chunks[index]
+        );
+
+      completed++;
+
+      state.scanProgress.phase =
+        `Retrieving Scrin screenshots in safe batches — ${completed} of ${chunks.length} completed…`;
+
+      render();
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      {
+        length:
+          Math.min(
+            2,
+            Math.max(
+              1,
+              chunks.length
+            )
+          ),
+      },
+
+      () =>
+        workerLoop()
+    )
+  );
+
+  return {
+    screenshots:
+      results.flatMap(
+        (r) =>
+          r?.screenshots ||
+          []
+      ),
+
+    failedActivityIds:
+      [
+        ...new Set(
+          results.flatMap(
+            (r) =>
+              r?.failedActivityIds ||
+              []
+          )
+        )
+      ],
+
+    rootBatchCount:
+      chunks.length,
+  };
+}
+
+async function wgmPrepBuildEvidence(
+  employee,
+  expectedHours
+) {
+  const startedAt =
+    Date.now();
+
+  const tz =
+    String(
+      employee.timezone ||
+      ''
+    ).trim();
+
+  const range =
+    wgmPrepRange(
+      state.period.from,
+      state.period.to,
+      tz
+    );
+
+  state.scanProgress.phase =
+    'Retrieving Scrin activity records…';
+
+  render();
+
+  const activityRequest =
+    () =>
+      wgmPrepFetch(
+        '/api/scrin/activities',
+        {
+          method:
+            'POST',
+
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+
+          body:
+            JSON.stringify({
+              connectionId:
+                employee
+                  .connectionId,
+
+              ranges: [
+                {
+                  employmentId:
+                    String(
+                      employee
+                        .employmentId
+                    ),
+
+                  from:
+                    range.from,
+
+                  to:
+                    range.to,
+                },
+              ],
+            }),
+        },
+        15000
+      );
+
+  let activityData;
+
+  try {
+    activityData =
+      await activityRequest();
+
+  } catch {
+    await new Promise(
+      (resolve) =>
+        setTimeout(
+          resolve,
+          700
+        )
+    );
+
+    activityData =
+      await activityRequest();
+  }
+
+  const rawActivities =
+    Array.isArray(
+      activityData
+        ?.activities
+    )
+      ? activityData
+          .activities
+      : [];
+
+  const clipped =
+    wgmPrepClipActivities(
+      rawActivities,
+      range
+    );
+
+  const activityIds =
+    clipped.used
+      .map(
+        (a) =>
+          a.id
+      )
+      .filter(Boolean);
+
+  if (
+    !activityIds.length
+  ) {
+    throw new Error(
+      'No Scrin activity records were returned for this employee and period.'
+    );
+  }
+
+  const screenshotData =
+    await wgmPrepCollectScreenshots(
+      employee
+        .connectionId,
+      activityIds
+    );
+
+  if (
+    screenshotData
+      .failedActivityIds
+      .length
+  ) {
+    throw new Error(
+      `Scrin could not return screenshot evidence for ${screenshotData.failedActivityIds.length} activity record(s) after safe retries. No report was generated so we do not publish an incomplete monitoring review.`
+    );
+  }
+
+  const rawScreenshotCount =
+    screenshotData
+      .screenshots
+      .length;
+
+  const deduped =
+    wgmPrepDedupeScreenshots(
+      screenshotData
+        .screenshots
+    );
+
+  const inRange =
+    deduped.filter(
+      (s) => {
+        const taken =
+          Number(
+            s?.taken
+          );
+
+        return (
+          Number.isFinite(
+            taken
+          ) &&
+          taken >=
+            range.from &&
+          taken <=
+            range.to
+        );
+      }
+    );
+
+  const manifest =
+    wgmPrepManifest(
+      inRange,
+      tz
+    );
+
+  if (
+    !manifest.length
+  ) {
+    throw new Error(
+      'No screenshots were returned for the selected employee and period.'
+    );
+  }
+
+  const trackedSeconds =
+    wgmPrepUnionSeconds(
+      clipped.used
+    );
+
+  const onlineTrackedSeconds =
+    wgmPrepUnionSeconds(
+      clipped.used.filter(
+        (a) =>
+          !(
+            a?.offline ===
+              true ||
+            a?.offline ===
+              1
+          )
+      )
+    );
+
+  const offlineSeconds =
+    wgmPrepUnionSeconds(
+      clipped.used.filter(
+        (a) =>
+          a?.offline ===
+            true ||
+          a?.offline ===
+            1
+      )
+    );
+
+  const activeDays =
+    new Set(
+      clipped.used.map(
+        (a) =>
+          wgmPrepLocalDate(
+            a.from,
+            tz
+          )
+      )
+    ).size;
+
+  const sessionKey =
+    `wgm_client_${
+      wgmPrepHash32(
+        [
+          employee
+            .connectionId,
+
+          employee
+            .employmentId,
+
+          state.period.from,
+          state.period.to,
+          tz,
+        ].join('|')
+      )
+        .toString(16)
+        .padStart(
+          8,
+          '0'
+        )
+    }`;
+
+  const humanSample =
+    wgmPrepHumanSample(
+      manifest,
+      sessionKey
+    );
+
+  const batchSize =
+    AI_BATCH_SIZE;
+
+  const overlapSize =
+    AI_BATCH_OVERLAP;
+
+  const newPerBatch =
+    Math.max(
+      1,
+      batchSize -
+      overlapSize
+    );
+
+  return {
+    sessionKey,
+
+    connection:
+      activityData
+        ?.connection ||
+      {
+        id:
+          employee
+            .connectionId,
+
+        name:
+          employee
+            .connectionName ||
+          'Scrin',
+
+        provider:
+          'scrin',
+      },
+
+    period: {
+      from:
+        state.period.from,
+
+      to:
+        state.period.to,
+    },
+
+    timezone: {
+      iana:
+        tz,
+
+      fallbackOffsetMinutes:
+        Number(
+          employee
+            .timezoneOffsetMinutes ||
+          0
+        ),
+
+      label:
+        tz,
+
+      configurationRecommended:
+        false,
+    },
+
+    workPolicy: {
+      type:
+        employee
+          .workPolicyType ||
+        'on_demand',
+
+      expectedDailyHours:
+        [
+          'fixed_schedule',
+          'flexible_daily',
+        ].includes(
+          employee
+            .workPolicyType
+        )
+          ? Number(
+              employee
+                .workPolicyTarget ||
+              0
+            )
+          : 0,
+
+      expectedWeeklyHours:
+        employee
+          .workPolicyType ===
+        'weekly_target'
+          ? Number(
+              employee
+                .workPolicyTarget ||
+              0
+            )
+          : 0,
+
+      expectedMonthlyHours:
+        employee
+          .workPolicyType ===
+        'monthly_target'
+          ? Number(
+              employee
+                .workPolicyTarget ||
+              0
+            )
+          : 0,
+
+      expectedPeriodHours:
+        Number(
+          expectedHours ||
+          0
+        ),
+
+      offlineWorkAllowed:
+        true,
+    },
+
+    metrics: {
+      trackedSeconds,
+
+      trackedHours:
+        trackedSeconds /
+        3600,
+
+      onlineTrackedSeconds,
+
+      onlineTrackedHours:
+        onlineTrackedSeconds /
+        3600,
+
+      offlineSeconds,
+
+      offlineHours:
+        offlineSeconds /
+        3600,
+
+      activeDays,
+
+      expectedHours:
+        Number(
+          expectedHours ||
+          0
+        ),
+
+      scheduleCoveragePercent:
+        Number(
+          expectedHours ||
+          0
+        ) > 0
+          ? Math.round(
+              Math.min(
+                100,
+                (
+                  trackedSeconds /
+                  3600 /
+                  Number(
+                    expectedHours
+                  )
+                ) *
+                1000
+              )
+            ) /
+            10
+          : null,
+    },
+
+    reconciliation: {
+      rawActivitiesReturned:
+        rawActivities.length,
+
+      activitiesUsed:
+        clipped.used.length,
+
+      activitiesExcludedOutsideRange:
+        clipped.outside,
+
+      activitiesClippedAtBoundary:
+        clipped.clipped,
+
+      invalidActivityRecords:
+        clipped.invalid,
+
+      rawScreenshotRecordsReturned:
+        rawScreenshotCount,
+
+      dedupedScreenshotRecords:
+        deduped.length,
+
+      duplicateScreenshotRecordsRemoved:
+        rawScreenshotCount -
+        deduped.length,
+
+      screenshotsExcludedOutsideRange:
+        deduped.length -
+        inRange.length,
+
+      screenshotsExcludedInvalidTimestamp:
+        0,
+
+      finalScreenshotCount:
+        manifest.length,
+
+      screenshotFetchBatchCount:
+        screenshotData
+          .rootBatchCount,
+
+      screenshotFailedActivityCount:
+        0,
+
+      reportingTimezone:
+        tz,
+
+      reportingRangeFromEpoch:
+        range.from,
+
+      reportingRangeToEpoch:
+        range.to,
+
+      retrievalMode:
+        'browser_staged_safe_batches',
+    },
+
+    preparationTiming: {
+      totalMs:
+        Date.now() -
+        startedAt,
+    },
+
+    screenshotCount:
+      manifest.length,
+
+    screenshotDates:
+      [
+        ...new Set(
+          manifest.map(
+            (x) =>
+              x.date
+          )
+        )
+      ].sort(),
+
+    screenshotDateCounts:
+      manifest.reduce(
+        (
+          o,
+          x
+        ) => {
+          o[x.date] =
+            (
+              o[x.date] ||
+              0
+            ) +
+            1;
+
+          return o;
+        },
+        {}
+      ),
+
+    manifest,
+
+    humanSample,
+
+    scanPlan: {
+      batchSize,
+
+      overlapSize,
+
+      newPerBatch,
+
+      totalBatches:
+        Math.ceil(
+          manifest.length /
+          newPerBatch
+        ),
+
+      internalBatching:
+        true,
+    },
+
+    apps:
+      [],
+
+    review: {
+      status:
+        trackedSeconds > 0 &&
+        manifest.length
+          ? 'Green'
+          : 'Yellow',
+
+      reasons:
+        [],
+
+      note:
+        'Evidence package prepared through staged Scrin retrieval.',
+    },
+
+    versions: {
+      analysisVersion:
+        'wgm-browser-staged-prepare-2.1.4-hotfix1',
+
+      rulesVersion:
+        'wgm-fraud-review-rules-2.1.1',
+
+      promptVersion:
+        'wgm-full-month-vision-prompt-2.1.1',
+
+      profileVersion:
+        'wgm-employee-profile-2.1.1',
+    },
+  };
+}
+
 async function generateReport() {
   if (!isOwnerReviewer()) {
     toast(
       'Only the WGM Owner or Reviewer can run screening.'
     );
+
     return;
   }
 
@@ -2704,6 +3941,7 @@ async function generateReport() {
     toast(
       'Select a monitored employee mapped to an employer.'
     );
+
     return;
   }
 
@@ -2716,15 +3954,18 @@ async function generateReport() {
     toast(
       'Set a valid reporting timezone for this employee in Settings first.'
     );
+
     return;
   }
 
   if (
-    state.mode !== 'LIVE'
+    state.mode !==
+    'LIVE'
   ) {
     toast(
       'Live Scrin data is required for AI screenshot screening.'
     );
+
     return;
   }
 
@@ -2737,6 +3978,7 @@ async function generateReport() {
     toast(
       'Select a valid reporting period.'
     );
+
     return;
   }
 
@@ -2746,13 +3988,23 @@ async function generateReport() {
   state.reportEmployeeId =
     employee.id;
 
-  state.prepared = null;
-  state.batchResults = [];
-  state.report = null;
-  state.meta = null;
+  state.prepared =
+    null;
 
-  state.humanDispositions = {};
-  state.findingDispositions = {};
+  state.batchResults =
+    [];
+
+  state.report =
+    null;
+
+  state.meta =
+    null;
+
+  state.humanDispositions =
+    {};
+
+  state.findingDispositions =
+    {};
 
   state.reviewerChecks = [
     false,
@@ -2767,12 +4019,19 @@ async function generateReport() {
 
   state.scanProgress = {
     phase:
-      'Retrieving and reconciling Scrin evidence…',
+      'Starting staged Scrin evidence retrieval…',
 
-    processed: 0,
-    total: 0,
-    completedBatches: 0,
-    totalBatches: 0,
+    processed:
+      0,
+
+    total:
+      0,
+
+    completedBatches:
+      0,
+
+    totalBatches:
+      0,
   };
 
   render();
@@ -2785,93 +4044,9 @@ async function generateReport() {
       );
 
     const prepared =
-      await fetchJson(
-        '/api/wgm/screening/prepare',
-        {
-          method: 'POST',
-
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-
-          body: JSON.stringify({
-            connectionId:
-              employee
-                .connectionId,
-
-            employmentId:
-              employee
-                .employmentId,
-
-            from:
-              state.period.from,
-
-            to:
-              state.period.to,
-
-            timezone:
-              employee.timezone,
-
-            timezoneOffsetMinutes:
-              employee
-                .timezoneOffsetMinutes ||
-              0,
-
-            expectedHours,
-
-            adjustedExpectedHours:
-              expectedHours,
-
-            workPolicyType:
-              employee
-                .workPolicyType ||
-              'on_demand',
-
-            expectedDailyHours:
-              [
-                'fixed_schedule',
-                'flexible_daily',
-              ].includes(
-                employee
-                  .workPolicyType
-              )
-                ? Number(
-                    employee
-                      .workPolicyTarget ||
-                    0
-                  )
-                : 0,
-
-            expectedWeeklyHours:
-              employee
-                .workPolicyType ===
-              'weekly_target'
-                ? Number(
-                    employee
-                      .workPolicyTarget ||
-                    0
-                  )
-                : 0,
-
-            expectedMonthlyHours:
-              employee
-                .workPolicyType ===
-              'monthly_target'
-                ? Number(
-                    employee
-                      .workPolicyTarget ||
-                    0
-                  )
-                : 0,
-
-            batchSize:
-              AI_BATCH_SIZE,
-
-            overlapSize:
-              AI_BATCH_OVERLAP,
-          }),
-        }
+      await wgmPrepBuildEvidence(
+        employee,
+        expectedHours
       );
 
     state.prepared =
@@ -2892,29 +4067,23 @@ async function generateReport() {
 
     saveEmployees();
 
-    if (
-      !prepared
-        .screenshotCount
-    ) {
-      throw new Error(
-        'No screenshots were returned for the selected employee and period.'
-      );
-    }
-
     state.reportStatus =
       'AI screening';
 
     state.scanProgress = {
       phase:
-        `Retrieved ${prepared.screenshotCount.toLocaleString()} reconciled screenshot(s). Running ${prepared.scanPlan?.totalBatches || 0} AI batches with ${AI_CONCURRENCY} concurrent workers…`,
+        `Retrieved ${prepared.screenshotCount.toLocaleString()} reconciled screenshot(s). ` +
+        `Running ${prepared.scanPlan?.totalBatches || 0} AI batches with ${AI_CONCURRENCY} concurrent workers…`,
 
-      processed: 0,
+      processed:
+        0,
 
       total:
         prepared
           .screenshotCount,
 
-      completedBatches: 0,
+      completedBatches:
+        0,
 
       totalBatches:
         prepared
@@ -2928,7 +4097,7 @@ async function generateReport() {
     const batchResults =
       await runBatchPool(
         prepared.manifest ||
-          [],
+        [],
 
         prepared.scanPlan,
 
@@ -2947,27 +4116,30 @@ async function generateReport() {
       await fetchJson(
         '/api/wgm/screening/finalize',
         {
-          method: 'POST',
+          method:
+            'POST',
 
           headers: {
             'Content-Type':
               'application/json',
           },
 
-          body: JSON.stringify({
-            sessionKey:
-              prepared
-                .sessionKey,
+          body:
+            JSON.stringify({
+              sessionKey:
+                prepared
+                  .sessionKey,
 
-            expectedScreenshots:
-              prepared
-                .screenshotCount,
+              expectedScreenshots:
+                prepared
+                  .screenshotCount,
 
-            manifest:
-              prepared.manifest,
+              manifest:
+                prepared
+                  .manifest,
 
-            batchResults,
-          }),
+              batchResults,
+            }),
         }
       );
 
@@ -3078,7 +4250,6 @@ async function generateReport() {
     );
   }
 }
-
 /* ==========================================================
    REPORT GENERATION PAGE
    ========================================================== */
