@@ -1,4 +1,4 @@
-const ANALYSIS_VERSION = 'wgm-reconciled-resilient-screening-2.1.2';
+const ANALYSIS_VERSION = 'wgm-reconciled-resilient-screening-2.1.3';
 const RULES_VERSION = 'wgm-fraud-review-rules-2.1.1';
 const PROMPT_VERSION = 'wgm-full-month-vision-prompt-2.1.1';
 const PROFILE_VERSION = 'wgm-employee-profile-2.1.1';
@@ -31,93 +31,43 @@ const BATCH_SCHEMA = {
           visualKey: { type: 'string' },
           reasons: { type: 'array', maxItems: 5, items: { type: 'string' } },
           signals: {
-            type: 'array',
-            maxItems: 5,
-            items: {
+            type: 'array', maxItems: 5, items: {
               type: 'string',
-              enum: [
-                'repeated_frozen',
-                'repetitive_cycling',
-                'activity_simulation',
-                'replay_candidate',
-                'prolonged_stagnation_10m'
-              ],
+              enum: ['repeated_frozen','repetitive_cycling','activity_simulation','replay_candidate','prolonged_stagnation_10m'],
             },
           },
         },
-        required: [
-          'screenshotId',
-          'status',
-          'visualKey',
-          'reasons',
-          'signals'
-        ],
+        required: ['screenshotId','status','visualKey','reasons','signals'],
         additionalProperties: false,
       },
     },
     checks: {
-      type: 'array',
-      minItems: 5,
-      maxItems: 5,
+      type: 'array', minItems: 5, maxItems: 5,
       items: {
         type: 'object',
         properties: {
           key: { type: 'string', enum: CHECK_KEYS },
-          status: {
-            type: 'string',
-            enum: ['clear', 'review', 'not_assessed']
-          },
+          status: { type: 'string', enum: ['clear','review','not_assessed'] },
           detail: { type: 'string' },
-          screenshotIds: {
-            type: 'array',
-            maxItems: 24,
-            items: { type: 'string' }
-          },
+          screenshotIds: { type: 'array', maxItems: 24, items: { type: 'string' } },
         },
-        required: [
-          'key',
-          'status',
-          'detail',
-          'screenshotIds'
-        ],
+        required: ['key','status','detail','screenshotIds'],
         additionalProperties: false,
       },
     },
   },
-  required: [
-    'screenshots',
-    'checks'
-  ],
+  required: ['screenshots','checks'],
   additionalProperties: false,
 };
 
 const CROSS_DAY_SCHEMA = {
   type: 'object',
   properties: {
-    status: {
-      type: 'string',
-      enum: [
-        'clear',
-        'review',
-        'not_assessed'
-      ]
-    },
-    detail: {
-      type: 'string'
-    },
-    screenshotIds: {
-      type: 'array',
-      maxItems: 24,
-      items: {
-        type: 'string'
-      }
-    },
+    status: { type: 'string', enum: ['clear','review','not_assessed'] },
+    detail: { type: 'string' },
+    screenshotIds: { type: 'array', maxItems: 24, items: { type: 'string' } },
   },
-  required: [
-    'status',
-    'detail',
-    'screenshotIds'
-  ],
+  required: ['status','detail','screenshotIds'],
   additionalProperties: false,
 };
 
@@ -142,616 +92,174 @@ Rules:
 
 const CROSS_DAY_PROMPT = `You are the White Glove Monitor cross-day replay verification engine. Candidate screenshots were selected because first-pass semantic fingerprints found similar sequences on different dates. Decide whether the actual images support a review-worthy replay-like repeated sequence across days. Recurring use of the same CRM, inbox, dashboard, spreadsheet, browser, template, listing system, or other normal business tool is not suspicious by itself. Similar layouts with changing legitimate content are normal. Do not infer fraud or misconduct. If evidence is insufficient, return not_assessed.`;
 
-const json = (data, status = 200) =>
-  new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-        'cache-control': 'no-store'
-      }
-    }
-  );
+const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type':'application/json;charset=UTF-8', 'cache-control':'no-store' } });
+const round = (v, d = 1) => { const f = 10 ** d; return Math.round(Number(v || 0) * f) / f; };
+const unique = (a = []) => [...new Set(a.filter(Boolean))];
+const clamp = (v, min, max) => Math.max(min, Math.min(max, Number(v || 0)));
+const readJson = async (r) => { try { return await r.json(); } catch { return {}; } };
 
-const round = (v, d = 1) => {
-  const f = 10 ** d;
-  return Math.round(Number(v || 0) * f) / f;
-};
-
-const unique = (a = []) =>
-  [...new Set(a.filter(Boolean))];
-
-const clamp = (v, min, max) =>
-  Math.max(
-    min,
-    Math.min(
-      max,
-      Number(v || 0)
-    )
-  );
-
-const readJson = async (r) => {
-  try {
-    return await r.json();
-  } catch {
-    return {};
-  }
-};
-
-function addDays(date, n) {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-function dayCount(from, to) {
-  const a = Date.parse(`${from}T00:00:00Z`);
-  const b = Date.parse(`${to}T00:00:00Z`);
-
-  return Number.isFinite(a) &&
-    Number.isFinite(b) &&
-    b >= a
-      ? Math.floor((b - a) / 86400000) + 1
-      : 0;
-}
-
-function hash32(s) {
-  let h = 0x811c9dc5;
-
-  for (const c of String(s || '')) {
-    h ^= c.charCodeAt(0);
-    h = Math.imul(h, 0x01000193);
-  }
-
-  return h >>> 0;
-}
-
-function rng32(seed) {
-  let a = seed >>> 0;
-
-  return () => {
-    a += 0x6d2b79f5;
-
-    let t = a;
-
-    t = Math.imul(
-      t ^ (t >>> 15),
-      t | 1
-    );
-
-    t ^=
-      t +
-      Math.imul(
-        t ^ (t >>> 7),
-        t | 61
-      );
-
-    return (
-      (t ^ (t >>> 14)) >>> 0
-    ) / 4294967296;
-  };
-}
-
-function shuffle(a, rng) {
-  const x = [...a];
-
-  for (
-    let i = x.length - 1;
-    i > 0;
-    i--
-  ) {
-    const j =
-      Math.floor(
-        rng() * (i + 1)
-      );
-
-    [
-      x[i],
-      x[j]
-    ] = [
-      x[j],
-      x[i]
-    ];
-  }
-
-  return x;
-}
-
-function sessionKey(i) {
-  return `wgm_${
-    hash32(
-      [
-        i.connectionId,
-        i.employmentId,
-        i.from,
-        i.to,
-        i.timezone,
-        i.timezoneOffsetMinutes || 0
-      ].join('|')
-    )
-      .toString(16)
-      .padStart(8, '0')
-  }`;
-}
-
-function first(
-  obj,
-  keys,
-  fallback = null
-) {
-  for (const k of keys) {
-    const v = obj?.[k];
-
-    if (
-      v !== undefined &&
-      v !== null &&
-      v !== ''
-    ) {
-      return v;
-    }
-  }
-
-  return fallback;
-}
-
-function fields(o) {
-  return (
-    o &&
-    typeof o === 'object' &&
-    !Array.isArray(o)
-  )
-    ? Object.keys(o).sort()
-    : [];
-}
+function addDays(date, n) { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+function dayCount(from, to) { const a = Date.parse(`${from}T00:00:00Z`), b = Date.parse(`${to}T00:00:00Z`); return Number.isFinite(a)&&Number.isFinite(b)&&b>=a ? Math.floor((b-a)/86400000)+1 : 0; }
+function hash32(s) { let h = 0x811c9dc5; for (const c of String(s||'')) { h ^= c.charCodeAt(0); h = Math.imul(h,0x01000193); } return h>>>0; }
+function rng32(seed) { let a=seed>>>0; return ()=>{ a+=0x6d2b79f5; let t=a; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
+function shuffle(a,rng) { const x=[...a]; for(let i=x.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[x[i],x[j]]=[x[j],x[i]];} return x; }
+function sessionKey(i) { return `wgm_${hash32([i.connectionId,i.employmentId,i.from,i.to,i.timezone,i.timezoneOffsetMinutes||0].join('|')).toString(16).padStart(8,'0')}`; }
+function first(obj, keys, fallback=null) { for(const k of keys){const v=obj?.[k]; if(v!==undefined&&v!==null&&v!=='') return v;} return fallback; }
+function fields(o){ return o&&typeof o==='object'&&!Array.isArray(o) ? Object.keys(o).sort() : []; }
 
 function parseConnections(env) {
-  const out = [];
-
-  if (
-    env.SCRIN_CONNECTIONS_JSON
-  ) {
-    let p;
-
-    try {
-      p =
-        JSON.parse(
-          env.SCRIN_CONNECTIONS_JSON
-        );
-    } catch {
-      throw new Error(
-        'SCRIN_CONNECTIONS_JSON is not valid JSON'
-      );
-    }
-
-    if (
-      !Array.isArray(p)
-    ) {
-      throw new Error(
-        'SCRIN_CONNECTIONS_JSON must be a JSON array'
-      );
-    }
-
-    for (const x of p) {
-      if (
-        !x?.id ||
-        !x?.token ||
-        x.enabled === false
-      ) {
-        continue;
-      }
-
-      const type =
-        x.type === 'dedicated'
-          ? 'dedicated'
-          : 'shared';
-
-      out.push({
-        id:
-          String(x.id),
-
-        name:
-          String(
-            x.name || x.id
-          ),
-
-        type,
-
-        employer:
-          String(
-            x.employer || ''
-          ),
-
-        token:
-          String(x.token),
-
-        provider:
-          'scrin'
-      });
-    }
+  const out=[];
+  if(env.SCRIN_CONNECTIONS_JSON){
+    let p; try{p=JSON.parse(env.SCRIN_CONNECTIONS_JSON);}catch{throw new Error('SCRIN_CONNECTIONS_JSON is not valid JSON');}
+    if(!Array.isArray(p)) throw new Error('SCRIN_CONNECTIONS_JSON must be a JSON array');
+    for(const x of p){ if(!x?.id||!x?.token||x.enabled===false) continue; const type=x.type==='dedicated'?'dedicated':'shared'; out.push({id:String(x.id),name:String(x.name||x.id),type,employer:String(x.employer||''),token:String(x.token),provider:'scrin'}); }
   }
-
-  if (
-    !out.length &&
-    env.SCRIN_TOKEN
-  ) {
-    out.push({
-      id:
-        'wgh-main',
-
-      name:
-        'WGH Main Scrin Account',
-
-      type:
-        'shared',
-
-      employer:
-        '',
-
-      token:
-        String(
-          env.SCRIN_TOKEN
-        ),
-
-      provider:
-        'scrin'
-    });
-  }
-
+  if(!out.length&&env.SCRIN_TOKEN) out.push({id:'wgh-main',name:'WGH Main Scrin Account',type:'shared',employer:'',token:String(env.SCRIN_TOKEN),provider:'scrin'});
   return out;
 }
 
-function publicConnection(c) {
-  return {
-    id:
-      c.id,
+function publicConnection(c){ return {id:c.id,name:c.name,provider:'scrin',type:c.type,employer:c.employer||'',employerLocked:c.type==='dedicated',status:'configured'}; }
 
-    name:
-      c.name,
+function connection(env,id){
+  const all=parseConnections(env);
+  if(!all.length) throw new Error('No Scrin connection configured');
 
-    provider:
-      'scrin',
-
-    type:
-      c.type,
-
-    employer:
-      c.employer || '',
-
-    employerLocked:
-      c.type === 'dedicated',
-
-    status:
-      'configured'
-  };
-}
-
-function connection(env, id) {
-  const all =
-    parseConnections(env);
-
-  if (
-    !all.length
-  ) {
-    throw new Error(
-      'No Scrin connection configured'
-    );
-  }
-
-  if (id) {
-    const c =
-      all.find(
-        x =>
-          x.id === String(id)
-      );
-
-    if (!c) {
-      throw new Error(
-        `Unknown Scrin connection: ${id}`
-      );
-    }
-
+  if(id){
+    const c=all.find(x=>x.id===String(id));
+    if(!c) throw new Error(`Unknown Scrin connection: ${id}`);
     return c;
   }
 
-  if (
-    all.length === 1
-  ) {
-    return all[0];
-  }
+  if(all.length===1) return all[0];
 
-  throw new Error(
-    'connectionId is required'
-  );
+  throw new Error('connectionId is required');
 }
 
-const SCRIN_TIMEOUT_MS = 20000;
+const SCRIN_TIMEOUT_MS = 45000;
 const SCRIN_MAX_ATTEMPTS = 3;
-const SCREENSHOT_FETCH_CONCURRENCY = 4;
+const SCREENSHOT_FETCH_CONCURRENCY = 2;
+const SCREENSHOT_ACTIVITY_IDS_PER_REQUEST = 25;
 
-function wait(ms) {
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
-      )
-  );
+function wait(ms){
+  return new Promise(resolve=>setTimeout(resolve,ms));
 }
 
-function retryableScrinStatus(status) {
-  return [
-    408,
-    409,
-    425,
-    429,
-    500,
-    502,
-    503,
-    504
-  ]
-    .includes(
-      Number(status)
-    );
+function retryableScrinStatus(status){
+  return [408,409,425,429,500,502,503,504].includes(Number(status));
 }
 
-async function scrin(
-  env,
-  id,
-  path,
-  body
-) {
-  const c =
-    connection(
-      env,
-      id
+async function scrin(env,id,path,body){
+  const c=connection(env,id);
+  const base=String(env.SCRIN_API_BASE_URL||'https://scrin.io').replace(/\/$/,'');
+
+  let lastError=null;
+
+  for(let attempt=1;attempt<=SCRIN_MAX_ATTEMPTS;attempt++){
+    const controller=new AbortController();
+    const timeout=setTimeout(
+      ()=>controller.abort(`Scrin request timed out after ${SCRIN_TIMEOUT_MS}ms`),
+      SCRIN_TIMEOUT_MS
     );
 
-  const base =
-    String(
-      env.SCRIN_API_BASE_URL ||
-      'https://scrin.io'
-    )
-      .replace(
-        /\/$/,
-        ''
-      );
+    try{
+      const r=await fetch(base+path,{
+        method:'POST',
+        headers:{
+          'content-type':'application/json',
+          'X-SSM-Token':c.token
+        },
+        body:JSON.stringify(body),
+        signal:controller.signal
+      });
 
-  let lastError = null;
+      const t=await r.text();
 
-  for (
-    let attempt = 1;
-    attempt <= SCRIN_MAX_ATTEMPTS;
-    attempt++
-  ) {
-    const controller =
-      new AbortController();
-
-    const timeout =
-      setTimeout(
-        () =>
-          controller.abort(
-            `Scrin request timed out after ${SCRIN_TIMEOUT_MS}ms`
-          ),
-        SCRIN_TIMEOUT_MS
-      );
-
-    try {
-      const r =
-        await fetch(
-          base + path,
-          {
-            method:
-              'POST',
-
-            headers: {
-              'content-type':
-                'application/json',
-
-              'X-SSM-Token':
-                c.token
-            },
-
-            body:
-              JSON.stringify(body),
-
-            signal:
-              controller.signal
-          }
-        );
-
-      const t =
-        await r.text();
-
-      if (r.ok) {
-        try {
+      if(r.ok){
+        try{
           return {
-            connection:
-              c,
-
-            data:
-              t
-                ? JSON.parse(t)
-                : null
+            connection:c,
+            data:t?JSON.parse(t):null
           };
-        } catch {
-          throw new Error(
-            `Scrin returned non-JSON data from ${path}`
-          );
+        }catch{
+          const parseError=new Error(`Scrin returned non-JSON data from ${path}`);
+          parseError.scrinRetryable=false;
+          throw parseError;
         }
       }
 
-      const e =
-        new Error(
-          `Scrin ${r.status} (${c.name}): ${t.slice(0, 300)}`
-        );
+      const e=new Error(`Scrin ${r.status} (${c.name}): ${t.slice(0,300)}`);
+      e.scrinStatus=Number(r.status);
+      e.scrinRetryable=retryableScrinStatus(r.status);
+      lastError=e;
 
-      lastError =
-        e;
-
-      if (
-        !retryableScrinStatus(
-          r.status
-        )
-        ||
-        attempt ===
-          SCRIN_MAX_ATTEMPTS
-      ) {
+      if(!e.scrinRetryable||attempt===SCRIN_MAX_ATTEMPTS){
         throw e;
       }
 
-      const retryAfter =
-        Number(
-          r.headers.get(
-            'retry-after'
-          ) || 0
-        );
-
-      const waitMs =
-        retryAfter > 0
-          ? Math.min(
-              retryAfter * 1000,
-              5000
-            )
-          : 500 * attempt;
+      const retryAfter=Number(r.headers.get('retry-after')||0);
+      const waitMs=retryAfter>0
+        ?Math.min(retryAfter*1000,5000)
+        :500*attempt;
 
       await wait(waitMs);
 
-    } catch(e) {
-      const timedOut =
-        e?.name === 'AbortError'
-        ||
-        controller.signal.aborted;
+    }catch(e){
+      const timedOut=e?.name==='AbortError'||controller.signal.aborted;
+      const networkish=timedOut||e instanceof TypeError;
 
-      const networkish =
-        timedOut
-        ||
-        e instanceof TypeError;
+      if(timedOut){
+        lastError=new Error(
+          `Scrin request timed out after ${SCRIN_TIMEOUT_MS}ms (${c.name}) at ${path}`
+        );
+        lastError.scrinTimedOut=true;
+        lastError.scrinRetryable=true;
+      }else{
+        lastError=e;
+        if(networkish&&lastError&&typeof lastError==='object'){
+          lastError.scrinRetryable=true;
+        }
+      }
 
-      lastError =
-        timedOut
-          ? new Error(
-              `Scrin request timed out after ${SCRIN_TIMEOUT_MS}ms (${c.name}) at ${path}`
-            )
-          : e;
-
-      if (
-        !networkish
-        ||
-        attempt ===
-          SCRIN_MAX_ATTEMPTS
-      ) {
+      if(!networkish&&!lastError?.scrinRetryable){
         throw lastError;
       }
 
-      await wait(
-        500 * attempt
-      );
+      if(attempt===SCRIN_MAX_ATTEMPTS){
+        throw lastError;
+      }
 
-    } finally {
-      clearTimeout(
-        timeout
-      );
+      await wait(500*attempt);
+
+    }finally{
+      clearTimeout(timeout);
     }
   }
 
-  throw (
-    lastError
-    ||
-    new Error(
-      `Scrin request failed (${c.name}) at ${path}`
-    )
-  );
+  throw lastError||new Error(`Scrin request failed (${c.name}) at ${path}`);
 }
 
-function projectList(
-  data,
-  company
-) {
-  const arrays = [
-    company?.projects,
-    company?.Projects,
-    data?.projects,
-    data?.Projects
-  ];
+function projectList(data, company){
+  const arrays=[company?.projects,company?.Projects,data?.projects,data?.Projects];
+  const seen=new Set();
+  const out=[];
 
-  const seen =
-    new Set();
+  for(const a of arrays){
+    if(!Array.isArray(a)) continue;
 
-  const out = [];
+    for(const p of a){
+      const id=first(p,['id','projectId','projectID']);
+      const name=first(p,['name','projectName','title'],'');
+      const k=id!=null?`id:${id}`:`name:${String(name).toLowerCase()}`;
 
-  for (const a of arrays) {
-    if (
-      !Array.isArray(a)
-    ) {
-      continue;
-    }
-
-    for (const p of a) {
-      const id =
-        first(
-          p,
-          [
-            'id',
-            'projectId',
-            'projectID'
-          ]
-        );
-
-      const name =
-        first(
-          p,
-          [
-            'name',
-            'projectName',
-            'title'
-          ],
-          ''
-        );
-
-      const k =
-        id != null
-          ? `id:${id}`
-          : `name:${String(name).toLowerCase()}`;
-
-      if (
-        (
-          id == null &&
-          !name
-        )
-        ||
-        seen.has(k)
-      ) {
-        continue;
-      }
+      if((id==null&&!name)||seen.has(k)) continue;
 
       seen.add(k);
 
       out.push({
         id,
-
-        name:
-          String(
-            name ||
-            `Project ${id}`
-          ),
-
-        client:
-          String(
-            first(
-              p,
-              [
-                'clientName',
-                'client',
-                'customerName',
-                'companyName'
-              ],
-              ''
-            ) || ''
-          ),
-
-        sourceFields:
-          fields(p)
+        name:String(name||`Project ${id}`),
+        client:String(first(p,['clientName','client','customerName','companyName'],'')||''),
+        sourceFields:fields(p)
       });
     }
   }
@@ -759,845 +267,276 @@ function projectList(
   return out;
 }
 
-function employmentSource(p) {
+function employmentSource(p){
   return {
-    registered:
-      first(
-        p,
-        [
-          'registered',
-          'isRegistered'
-        ]
-      ),
-
-    archived:
-      first(
-        p,
-        [
-          'archived',
-          'isArchived'
-        ]
-      ),
-
-    active:
-      first(
-        p,
-        [
-          'active',
-          'isActive'
-        ]
-      ),
-
-    role:
-      first(
-        p,
-        [
-          'role',
-          'position',
-          'title'
-        ]
-      ),
-
-    timezone:
-      first(
-        p,
-        [
-          'timezone',
-          'timeZone',
-          'tz'
-        ]
-      ),
-
-    hourlyRate:
-      Number.isFinite(
-        Number(
-          first(
-            p,
-            [
-              'hourlyRate',
-              'hourRate',
-              'ratePerHour',
-              'paymentRate',
-              'rate'
-            ]
-          )
-        )
-      )
-        ? Number(
-            first(
-              p,
-              [
-                'hourlyRate',
-                'hourRate',
-                'ratePerHour',
-                'paymentRate',
-                'rate'
-              ]
-            )
-          )
-        : null,
-
-    currency:
-      first(
-        p,
-        [
-          'currency',
-          'currencyCode'
-        ]
-      ),
-
-    invitedAt:
-      first(
-        p,
-        [
-          'invitedAt',
-          'inviteDate',
-          'createdAt',
-          'createdOn'
-        ]
-      ),
-
-    fields:
-      fields(p)
+    registered:first(p,['registered','isRegistered']),
+    archived:first(p,['archived','isArchived']),
+    active:first(p,['active','isActive']),
+    role:first(p,['role','position','title']),
+    timezone:first(p,['timezone','timeZone','tz']),
+    hourlyRate:Number.isFinite(Number(first(p,['hourlyRate','hourRate','ratePerHour','paymentRate','rate'])))?Number(first(p,['hourlyRate','hourRate','ratePerHour','paymentRate','rate'])):null,
+    currency:first(p,['currency','currencyCode']),
+    invitedAt:first(p,['invitedAt','inviteDate','createdAt','createdOn']),
+    fields:fields(p)
   };
 }
 
-function commonNormalize(
-  data,
-  c
-) {
-  const companies =
-    Array.isArray(
-      data?.companies
-    )
-      ? data.companies
-      : Array.isArray(data)
-        ? data
-        : [];
+function commonNormalize(data,c){
+  const companies=Array.isArray(data?.companies)?data.companies:Array.isArray(data)?data:[];
+  const employees=[];
+  const projects=[];
 
-  const employees = [];
-  const projects = [];
+  for(const co of companies){
+    const cps=projectList(data,co);
 
-  for (
-    const co of companies
-  ) {
-    const cps =
-      projectList(
-        data,
-        co
-      );
+    projects.push(...cps.map(p=>({
+      ...p,
+      scrinCompanyId:co.id??null,
+      scrinCompany:co.name||''
+    })));
 
-    projects.push(
-      ...cps.map(
-        p => ({
-          ...p,
-
-          scrinCompanyId:
-            co.id ?? null,
-
-          scrinCompany:
-            co.name || ''
-        })
-      )
-    );
-
-    for (
-      const p of
-        Array.isArray(
-          co?.employments
-        )
-          ? co.employments
-          : []
-    ) {
-      const s =
-        employmentSource(p);
+    for(const p of Array.isArray(co?.employments)?co.employments:[]){
+      const s=employmentSource(p);
 
       employees.push({
-        id:
-          `${c.id}::${p.id}`,
-
-        connectionId:
-          c.id,
-
-        connectionName:
-          c.name,
-
-        connectionType:
-          c.type,
-
-        connectionEmployer:
-          c.employer || '',
-
-        employerLocked:
-          c.type === 'dedicated',
-
-        employmentId:
-          p.id,
-
-        name:
-          p.name ||
-          p.email ||
-          `Employment ${p.id}`,
-
-        email:
-          p.email || null,
-
-        scrinCompanyId:
-          co.id,
-
-        scrinCompany:
-          co.name || '',
-
-        scrinRegistered:
-          s.registered,
-
-        scrinArchived:
-          s.archived,
-
-        scrinActive:
-          s.active,
-
-        scrinRole:
-          s.role,
-
-        scrinTimezone:
-          s.timezone,
-
-        scrinHourlyRate:
-          s.hourlyRate,
-
-        scrinCurrency:
-          s.currency,
-
-        scrinInvitedAt:
-          s.invitedAt,
-
-        sourceEmploymentFields:
-          s.fields,
-
-        sourceCompanyFields:
-          fields(co),
-
-        sourceProjectCount:
-          cps.length,
-
-        source:
-          c.type === 'dedicated'
-            ? 'Standalone WGM'
-            : 'WGH Managed',
-
-        role:
-          'Virtual Assistant',
-
-        reportingStatus:
-          'Synced',
-
-        employer:
-          c.type === 'dedicated'
-            ? c.employer
-            : ''
+        id:`${c.id}::${p.id}`,
+        connectionId:c.id,
+        connectionName:c.name,
+        connectionType:c.type,
+        connectionEmployer:c.employer||'',
+        employerLocked:c.type==='dedicated',
+        employmentId:p.id,
+        name:p.name||p.email||`Employment ${p.id}`,
+        email:p.email||null,
+        scrinCompanyId:co.id,
+        scrinCompany:co.name||'',
+        scrinRegistered:s.registered,
+        scrinArchived:s.archived,
+        scrinActive:s.active,
+        scrinRole:s.role,
+        scrinTimezone:s.timezone,
+        scrinHourlyRate:s.hourlyRate,
+        scrinCurrency:s.currency,
+        scrinInvitedAt:s.invitedAt,
+        sourceEmploymentFields:s.fields,
+        sourceCompanyFields:fields(co),
+        sourceProjectCount:cps.length,
+        source:c.type==='dedicated'?'Standalone WGM':'WGH Managed',
+        role:'Virtual Assistant',
+        reportingStatus:'Synced',
+        employer:c.type==='dedicated'?c.employer:''
       });
     }
   }
 
-  return {
-    companies,
-    employees,
-    projects
-  };
+  return {companies,employees,projects};
 }
 
-function findEmployment(
-  data,
-  id
-) {
-  const companies =
-    Array.isArray(
-      data?.companies
-    )
-      ? data.companies
-      : Array.isArray(data)
-        ? data
-        : [];
+function findEmployment(data,id){
+  const companies=Array.isArray(data?.companies)?data.companies:Array.isArray(data)?data:[];
 
-  for (
-    const company of companies
-  ) {
-    for (
-      const person of
-        Array.isArray(
-          company?.employments
-        )
-          ? company.employments
-          : []
-    ) {
-      if (
-        String(
-          person?.id
-        )
-        ===
-        String(id)
-      ) {
-        return {
-          company,
-          person
-        };
-      }
+  for(const company of companies){
+    for(const person of Array.isArray(company?.employments)?company.employments:[]){
+      if(String(person?.id)===String(id)) return {company,person};
     }
   }
 
-  return {
-    company:
-      null,
-
-    person:
-      null
-  };
+  return {company:null,person:null};
 }
 
-function validTz(tz) {
-  if (!tz) {
-    return false;
-  }
+function validTz(tz){
+  if(!tz) return false;
 
-  try {
-    new Intl.DateTimeFormat(
-      'en-US',
-      {
-        timeZone:
-          tz
-      }
-    )
-      .format(
-        new Date()
-      );
-
+  try{
+    new Intl.DateTimeFormat('en-US',{timeZone:tz}).format(new Date());
     return true;
-
-  } catch {
+  }catch{
     return false;
   }
 }
 
-function offsetMs(ms, tz) {
-  const p =
-    new Intl.DateTimeFormat(
-      'en-US',
-      {
-        timeZone:
-          tz,
+function offsetMs(ms,tz){
+  const p=new Intl.DateTimeFormat('en-US',{
+    timeZone:tz,
+    year:'numeric',
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    second:'2-digit',
+    hourCycle:'h23'
+  }).formatToParts(new Date(ms));
 
-        year:
-          'numeric',
+  const m={};
 
-        month:
-          '2-digit',
-
-        day:
-          '2-digit',
-
-        hour:
-          '2-digit',
-
-        minute:
-          '2-digit',
-
-        second:
-          '2-digit',
-
-        hourCycle:
-          'h23'
-      }
-    )
-      .formatToParts(
-        new Date(ms)
-      );
-
-  const m = {};
-
-  for (const x of p) {
-    if (
-      x.type !== 'literal'
-    ) {
-      m[x.type] =
-        Number(
-          x.value
-        );
-    }
+  for(const x of p){
+    if(x.type!=='literal') m[x.type]=Number(x.value);
   }
 
-  return (
-    Date.UTC(
-      m.year,
-      m.month - 1,
-      m.day,
-      m.hour,
-      m.minute,
-      m.second
-    )
-    -
-    ms
-  );
+  return Date.UTC(m.year,m.month-1,m.day,m.hour,m.minute,m.second)-ms;
 }
 
-function zonedUtc(
-  date,
-  tz
-) {
-  const [
-    y,
-    m,
-    d
-  ] =
-    date
-      .split('-')
-      .map(Number);
+function zonedUtc(date,tz){
+  const [y,m,d]=date.split('-').map(Number);
+  const guess=Date.UTC(y,m-1,d);
 
-  const guess =
-    Date.UTC(
-      y,
-      m - 1,
-      d
-    );
+  let off=offsetMs(guess,tz);
+  let utc=guess-off;
 
-  let off =
-    offsetMs(
-      guess,
-      tz
-    );
+  const off2=offsetMs(utc,tz);
 
-  let utc =
-    guess - off;
-
-  const off2 =
-    offsetMs(
-      utc,
-      tz
-    );
-
-  if (
-    off2 !== off
-  ) {
-    utc =
-      guess - off2;
-  }
+  if(off2!==off) utc=guess-off2;
 
   return utc;
 }
 
-function epochRange(
-  from,
-  to,
-  tz = '',
-  offsetMinutes = 0
-) {
-  let a;
-  let b;
+function epochRange(from,to,tz='',offsetMinutes=0){
+  let a,b;
 
-  if (
-    validTz(tz)
-  ) {
-    a =
-      zonedUtc(
-        from,
-        tz
-      );
-
-    b =
-      zonedUtc(
-        addDays(
-          to,
-          1
-        ),
-        tz
-      )
-      -
-      1000;
-
+  if(validTz(tz)){
+    a=zonedUtc(from,tz);
+    b=zonedUtc(addDays(to,1),tz)-1000;
   } else {
-    a =
-      Date.parse(
-        `${from}T00:00:00Z`
-      )
-      -
-      Number(
-        offsetMinutes || 0
-      )
-      *
-      60000;
-
-    b =
-      Date.parse(
-        `${to}T23:59:59Z`
-      )
-      -
-      Number(
-        offsetMinutes || 0
-      )
-      *
-      60000;
+    a=Date.parse(`${from}T00:00:00Z`)-Number(offsetMinutes||0)*60000;
+    b=Date.parse(`${to}T23:59:59Z`)-Number(offsetMinutes||0)*60000;
   }
 
-  if (
-    !Number.isFinite(a)
-    ||
-    !Number.isFinite(b)
-    ||
-    b < a
-  ) {
-    throw new Error(
-      'Invalid date range'
-    );
+  if(!Number.isFinite(a)||!Number.isFinite(b)||b<a){
+    throw new Error('Invalid date range');
   }
 
   return {
-    from:
-      Math.floor(
-        a / 1000
-      ),
-
-    to:
-      Math.floor(
-        b / 1000
-      )
+    from:Math.floor(a/1000),
+    to:Math.floor(b/1000)
   };
 }
 
-function localDate(
-  sec,
-  tz = '',
-  off = 0
-) {
-  const ms =
-    Number(sec)
-    *
-    1000;
+function localDate(sec,tz='',off=0){
+  const ms=Number(sec)*1000;
 
-  if (
-    validTz(tz)
-  ) {
-    const p =
-      new Intl.DateTimeFormat(
-        'en-CA',
-        {
-          timeZone:
-            tz,
+  if(validTz(tz)){
+    const p=new Intl.DateTimeFormat('en-CA',{
+      timeZone:tz,
+      year:'numeric',
+      month:'2-digit',
+      day:'2-digit'
+    }).formatToParts(new Date(ms));
 
-          year:
-            'numeric',
+    const m={};
 
-          month:
-            '2-digit',
-
-          day:
-            '2-digit'
-        }
-      )
-        .formatToParts(
-          new Date(ms)
-        );
-
-    const m = {};
-
-    for (const x of p) {
-      if (
-        x.type !== 'literal'
-      ) {
-        m[x.type] =
-          x.value;
-      }
+    for(const x of p){
+      if(x.type!=='literal') m[x.type]=x.value;
     }
 
-    return (
-      `${m.year}-${m.month}-${m.day}`
-    );
+    return `${m.year}-${m.month}-${m.day}`;
   }
 
-  return (
-    new Date(
-      ms
-      +
-      Number(
-        off || 0
-      )
-      *
-      60000
-    )
-      .toISOString()
-      .slice(
-        0,
-        10
-      )
-  );
+  return new Date(ms+Number(off||0)*60000).toISOString().slice(0,10);
 }
 
-function localTime(
-  sec,
-  tz = '',
-  off = 0
-) {
-  if (
-    sec == null
-  ) {
-    return '—';
+function localTime(sec,tz='',off=0){
+  if(sec==null) return '—';
+
+  const ms=Number(sec)*1000;
+
+  if(validTz(tz)){
+    return new Intl.DateTimeFormat('en-US',{
+      timeZone:tz,
+      hour:'numeric',
+      minute:'2-digit',
+      hour12:true
+    }).format(new Date(ms));
   }
 
-  const ms =
-    Number(sec)
-    *
-    1000;
+  const d=new Date(ms+Number(off||0)*60000);
 
-  if (
-    validTz(tz)
-  ) {
-    return (
-      new Intl.DateTimeFormat(
-        'en-US',
-        {
-          timeZone:
-            tz,
+  let h=d.getUTCHours();
 
-          hour:
-            'numeric',
+  const m=String(d.getUTCMinutes()).padStart(2,'0');
+  const s=h>=12?'PM':'AM';
 
-          minute:
-            '2-digit',
+  h%=12;
 
-          hour12:
-            true
-        }
-      )
-        .format(
-          new Date(ms)
-        )
-    );
-  }
+  if(!h) h=12;
 
-  const d =
-    new Date(
-      ms
-      +
-      Number(
-        off || 0
-      )
-      *
-      60000
-    );
-
-  let h =
-    d.getUTCHours();
-
-  const m =
-    String(
-      d.getUTCMinutes()
-    )
-      .padStart(
-        2,
-        '0'
-      );
-
-  const s =
-    h >= 12
-      ? 'PM'
-      : 'AM';
-
-  h %= 12;
-
-  if (!h) {
-    h = 12;
-  }
-
-  return (
-    `${h}:${m} ${s}`
-  );
+  return `${h}:${m} ${s}`;
 }
 
-function duration(a) {
-  const f =
-    Number(
-      a?.from
-    );
+function duration(a){
+  const f=Number(a?.from);
+  const t=Number(a?.to);
 
-  const t =
-    Number(
-      a?.to
-    );
-
-  return (
-    Number.isFinite(f)
-    &&
-    Number.isFinite(t)
-    &&
-    t > f
-  )
-    ? t - f
-    : 0;
+  return Number.isFinite(f)&&Number.isFinite(t)&&t>f?t-f:0;
 }
 
-function clipActivities(
-  raw,
-  range
-) {
-  const used = [];
+function clipActivities(raw,range){
+  const used=[];
 
-  let outside = 0;
-  let clipped = 0;
-  let invalid = 0;
+  let outside=0;
+  let clipped=0;
+  let invalid=0;
 
-  for (const a of raw) {
-    const f =
-      Number(
-        a?.from
-      );
+  for(const a of raw){
+    const f=Number(a?.from);
+    const t=Number(a?.to);
 
-    const t =
-      Number(
-        a?.to
-      );
-
-    if (
-      !Number.isFinite(f)
-      ||
-      !Number.isFinite(t)
-      ||
-      t <= f
-    ) {
+    if(!Number.isFinite(f)||!Number.isFinite(t)||t<=f){
       invalid++;
       continue;
     }
 
-    const from =
-      Math.max(
-        f,
-        range.from
-      );
+    const from=Math.max(f,range.from);
+    const to=Math.min(t,range.to);
 
-    const to =
-      Math.min(
-        t,
-        range.to
-      );
-
-    if (
-      to <= from
-    ) {
+    if(to<=from){
       outside++;
       continue;
     }
 
-    if (
-      from !== f
-      ||
-      to !== t
-    ) {
-      clipped++;
-    }
+    if(from!==f||to!==t) clipped++;
 
     used.push({
       ...a,
-
       from,
-
       to,
-
-      _originalFrom:
-        f,
-
-      _originalTo:
-        t
+      _originalFrom:f,
+      _originalTo:t
     });
   }
 
-  return {
-    used,
-    outside,
-    clipped,
-    invalid
-  };
+  return {used,outside,clipped,invalid};
 }
 
-function unionSeconds(a = []) {
-  const x =
-    a
-      .map(
-        v => [
-          Number(v.from),
-          Number(v.to)
-        ]
-      )
-      .filter(
-        ([f, t]) =>
-          Number.isFinite(f)
-          &&
-          Number.isFinite(t)
-          &&
-          t > f
-      )
-      .sort(
-        (a, b) =>
-          a[0] - b[0]
-      );
+function unionSeconds(a=[]){
+  const x=a
+    .map(v=>[Number(v.from),Number(v.to)])
+    .filter(([f,t])=>Number.isFinite(f)&&Number.isFinite(t)&&t>f)
+    .sort((a,b)=>a[0]-b[0]);
 
-  if (
-    !x.length
-  ) {
-    return 0;
-  }
+  if(!x.length) return 0;
 
-  let total = 0;
+  let total=0;
+  let [s,e]=x[0];
 
-  let [
-    s,
-    e
-  ] = x[0];
+  for(let i=1;i<x.length;i++){
+    const [ns,ne]=x[i];
 
-  for (
-    let i = 1;
-    i < x.length;
-    i++
-  ) {
-    const [
-      ns,
-      ne
-    ] = x[i];
-
-    if (
-      ns <= e
-    ) {
-      e =
-        Math.max(
-          e,
-          ne
-        );
-
+    if(ns<=e){
+      e=Math.max(e,ne);
     } else {
-      total +=
-        e - s;
-
-      s = ns;
-      e = ne;
+      total+=e-s;
+      s=ns;
+      e=ne;
     }
   }
 
-  return (
-    total
-    +
-    e
-    -
-    s
-  );
+  return total+e-s;
 }
 
-function requireReportingTimezone(tz) {
-  const v =
-    String(
-      tz || ''
-    )
-      .trim();
+function requireReportingTimezone(tz){
+  const v=String(tz||'').trim();
 
-  if (
-    !validTz(v)
-  ) {
+  if(!validTz(v)){
     throw new Error(
       'Set a valid IANA reporting timezone for this VA before loading monitored data or running AI screening (for example America/Los_Angeles, America/New_York, America/Chicago, Europe/London, or Africa/Lagos).'
     );
@@ -1606,374 +545,238 @@ function requireReportingTimezone(tz) {
   return v;
 }
 
-function workPolicy(i = {}) {
-  const allowed =
-    new Set([
-      'fixed_schedule',
-      'flexible_daily',
-      'weekly_target',
-      'monthly_target',
-      'on_demand'
-    ]);
+function workPolicy(i={}){
+  const allowed=new Set([
+    'fixed_schedule',
+    'flexible_daily',
+    'weekly_target',
+    'monthly_target',
+    'on_demand'
+  ]);
 
-  const legacy =
-    Number(
-      i.adjustedExpectedHours
-      ??
-      i.expectedHours
-      ??
-      0
-    );
-
-  const req =
-    String(
-      i.workPolicyType || ''
-    );
+  const legacy=Number(i.adjustedExpectedHours??i.expectedHours??0);
+  const req=String(i.workPolicyType||'');
 
   return {
-    type:
-      allowed.has(req)
-        ? req
-        : (
-            legacy > 0
-              ? 'flexible_daily'
-              : 'on_demand'
-          ),
-
-    expectedDailyHours:
-      Number(
-        i.expectedDailyHours || 0
-      ),
-
-    expectedWeeklyHours:
-      Number(
-        i.expectedWeeklyHours || 0
-      ),
-
-    expectedMonthlyHours:
-      Number(
-        i.expectedMonthlyHours || 0
-      ),
-
-    expectedPeriodHours:
-      legacy,
-
-    scheduledDays:
-      Array.isArray(
-        i.scheduledDays
-      )
-        ? i.scheduledDays.map(String)
-        : [],
-
-    startTime:
-      String(
-        i.startTime || ''
-      ),
-
-    endTime:
-      String(
-        i.endTime || ''
-      ),
-
-    graceMinutes:
-      Math.max(
-        0,
-        Number(
-          i.graceMinutes || 0
-        )
-      ),
-
-    offlineWorkAllowed:
-      i.offlineWorkAllowed !== false
+    type:allowed.has(req)?req:(legacy>0?'flexible_daily':'on_demand'),
+    expectedDailyHours:Number(i.expectedDailyHours||0),
+    expectedWeeklyHours:Number(i.expectedWeeklyHours||0),
+    expectedMonthlyHours:Number(i.expectedMonthlyHours||0),
+    expectedPeriodHours:legacy,
+    scheduledDays:Array.isArray(i.scheduledDays)?i.scheduledDays.map(String):[],
+    startTime:String(i.startTime||''),
+    endTime:String(i.endTime||''),
+    graceMinutes:Math.max(0,Number(i.graceMinutes||0)),
+    offlineWorkAllowed:i.offlineWorkAllowed!==false
   };
 }
 
-function activitySummary(
-  a,
-  expected = 0,
-  tz = '',
-  off = 0,
-  policy = null
-) {
-  const all =
-    unionSeconds(a);
+function activitySummary(a,expected=0,tz='',off=0,policy=null){
+  const all=unionSeconds(a);
 
-  const online =
-    unionSeconds(
-      a.filter(
-        x =>
-          !(
-            x?.offline === true
-            ||
-            x?.offline === 1
-          )
-      )
-    );
+  const online=unionSeconds(
+    a.filter(x=>!(x?.offline===true||x?.offline===1))
+  );
 
-  const offline =
-    unionSeconds(
-      a.filter(
-        x =>
-          x?.offline === true
-          ||
-          x?.offline === 1
-      )
-    );
+  const offline=unionSeconds(
+    a.filter(x=>x?.offline===true||x?.offline===1)
+  );
 
-  const days =
-    new Set();
+  const days=new Set();
 
-  for (const x of a) {
-    if (
-      duration(x) > 0
-    ) {
-      days.add(
-        localDate(
-          x.from,
-          tz,
-          off
-        )
-      );
-    }
+  for(const x of a){
+    if(duration(x)>0) days.add(localDate(x.from,tz,off));
   }
 
-  const target =
-    Number(
-      expected
-      ||
-      policy?.expectedPeriodHours
-      ||
-      0
-    );
+  const target=Number(expected||policy?.expectedPeriodHours||0);
 
   return {
-    trackedSeconds:
-      all,
-
-    trackedHours:
-      all / 3600,
-
-    onlineTrackedSeconds:
-      online,
-
-    onlineTrackedHours:
-      online / 3600,
-
-    offlineSeconds:
-      offline,
-
-    offlineHours:
-      offline / 3600,
-
-    activeDays:
-      days.size,
-
-    expectedHours:
-      target,
-
-    scheduleCoveragePercent:
-      target > 0
-        ? round(
-            Math.min(
-              100,
-              (
-                all
-                /
-                3600
-                /
-                target
-              )
-              *
-              100
-            ),
-            1
-          )
-        : null,
-
-    workPolicy:
-      policy
+    trackedSeconds:all,
+    trackedHours:all/3600,
+    onlineTrackedSeconds:online,
+    onlineTrackedHours:online/3600,
+    offlineSeconds:offline,
+    offlineHours:offline/3600,
+    activeDays:days.size,
+    expectedHours:target,
+    scheduleCoveragePercent:target>0
+      ?round(Math.min(100,(all/3600/target)*100),1)
+      :null,
+    workPolicy:policy
   };
 }
 
-async function screenshotsDetailed(
-  env,
-  id,
-  activityIds
-) {
-  const startedAt =
-    Date.now();
+function scrinScreenshotSplitCandidate(error){
+  return Boolean(
+    error?.scrinTimedOut||
+    error?.scrinRetryable||
+    error instanceof TypeError
+  );
+}
 
-  const raw = [];
+async function fetchScreenshotChunk(env,id,activityIds,stats,depth=0){
+  const ids=unique(activityIds);
 
-  const ids =
-    unique(
-      activityIds
+  if(!ids.length){
+    return [];
+  }
+
+  stats.requestCount++;
+
+  try{
+    const r=await scrin(
+      env,
+      id,
+      '/api/v2/GetScreenshots',
+      ids
     );
 
-  const chunks = [];
+    return Array.isArray(r.data)
+      ?r.data
+      :[];
 
-  for (
-    let i = 0;
-    i < ids.length;
-    i += 100
-  ) {
+  }catch(error){
+    if(
+      ids.length<=1||
+      !scrinScreenshotSplitCandidate(error)
+    ){
+      throw error;
+    }
+
+    stats.splitCount++;
+
+    const middle=Math.ceil(ids.length/2);
+    const left=ids.slice(0,middle);
+    const right=ids.slice(middle);
+
+    // Deliberately run split children sequentially so the total
+    // Scrin screenshot-request concurrency never exceeds the
+    // configured worker pool.
+    const leftRows=await fetchScreenshotChunk(
+      env,
+      id,
+      left,
+      stats,
+      depth+1
+    );
+
+    const rightRows=await fetchScreenshotChunk(
+      env,
+      id,
+      right,
+      stats,
+      depth+1
+    );
+
+    return [
+      ...leftRows,
+      ...rightRows
+    ];
+  }
+}
+
+async function screenshotsDetailed(env,id,activityIds){
+  const startedAt=Date.now();
+  const raw=[];
+  const ids=unique(activityIds);
+  const chunks=[];
+
+  for(
+    let i=0;
+    i<ids.length;
+    i+=SCREENSHOT_ACTIVITY_IDS_PER_REQUEST
+  ){
     chunks.push(
       ids.slice(
         i,
-        i + 100
+        i+SCREENSHOT_ACTIVITY_IDS_PER_REQUEST
       )
     );
   }
 
-  let cursor = 0;
-
-  const workers = [];
-
-  const workerCount =
-    Math.min(
-      SCREENSHOT_FETCH_CONCURRENCY,
-      Math.max(
-        1,
-        chunks.length
-      )
-    );
-
-  for (
-    let workerIndex = 0;
-    workerIndex < workerCount;
-    workerIndex++
-  ) {
-    workers.push(
-      (
-        async () => {
-          while (true) {
-            const index =
-              cursor++;
-
-            if (
-              index >=
-              chunks.length
-            ) {
-              return;
-            }
-
-            const r =
-              await scrin(
-                env,
-                id,
-                '/api/v2/GetScreenshots',
-                chunks[index]
-              );
-
-            if (
-              Array.isArray(
-                r.data
-              )
-            ) {
-              raw.push(
-                ...r.data
-              );
-            }
-          }
-        }
-      )()
-    );
-  }
-
-  await Promise.all(
-    workers
+  let cursor=0;
+  const workers=[];
+  const workerCount=Math.min(
+    SCREENSHOT_FETCH_CONCURRENCY,
+    Math.max(1,chunks.length)
   );
 
-  const map =
-    new Map();
+  const stats={
+    requestCount:0,
+    splitCount:0
+  };
 
-  for (const s of raw) {
-    const k =
-      String(
-        s?.id
-        ||
-        `${s?.activityId || 'activity'}:${s?.taken || 0}:${s?.url || s?.thumbUrl || ''}`
-      );
+  for(let workerIndex=0;workerIndex<workerCount;workerIndex++){
+    workers.push((async()=>{
+      while(true){
+        const index=cursor++;
 
-    if (
-      !map.has(k)
-    ) {
-      map.set(
-        k,
-        s
-      );
+        if(index>=chunks.length){
+          return;
+        }
+
+        const rows=await fetchScreenshotChunk(
+          env,
+          id,
+          chunks[index],
+          stats
+        );
+
+        if(rows.length){
+          raw.push(...rows);
+        }
+      }
+    })());
+  }
+
+  await Promise.all(workers);
+
+  const map=new Map();
+
+  for(const s of raw){
+    const k=String(
+      s?.id||
+      `${s?.activityId||'activity'}:${s?.taken||0}:${s?.url||s?.thumbUrl||''}`
+    );
+
+    if(!map.has(k)){
+      map.set(k,s);
     }
   }
 
-  const screenshots =
-    [...map.values()]
-      .sort(
-        (a, b) =>
-          Number(
-            a?.taken || 0
-          )
-          -
-          Number(
-            b?.taken || 0
-          )
-      );
+  const screenshots=[...map.values()]
+    .sort((a,b)=>Number(a?.taken||0)-Number(b?.taken||0));
 
   return {
     raw,
-
     screenshots,
-
-    rawCount:
-      raw.length,
-
-    dedupedCount:
-      screenshots.length,
-
-    duplicateCount:
-      raw.length
-      -
-      screenshots.length,
-
-    fetchBatchCount:
-      chunks.length,
-
-    fetchConcurrency:
-      workerCount,
-
-    elapsedMs:
-      Date.now()
-      -
-      startedAt
+    rawCount:raw.length,
+    dedupedCount:screenshots.length,
+    duplicateCount:raw.length-screenshots.length,
+    fetchBatchCount:chunks.length,
+    fetchRequestCount:stats.requestCount,
+    splitCount:stats.splitCount,
+    activityIdsPerRequest:SCREENSHOT_ACTIVITY_IDS_PER_REQUEST,
+    fetchConcurrency:workerCount,
+    elapsedMs:Date.now()-startedAt
   };
 }
 
-function inRangeScreenshots(
-  a,
-  range
-) {
-  const out = [];
+function inRangeScreenshots(a,range){
+  const out=[];
 
-  let outside = 0;
-  let invalid = 0;
+  let outside=0;
+  let invalid=0;
 
-  for (const s of a) {
-    const t =
-      Number(
-        s?.taken
-      );
+  for(const s of a){
+    const t=Number(s?.taken);
 
-    if (
-      !Number.isFinite(t)
-    ) {
+    if(!Number.isFinite(t)){
       invalid++;
       continue;
     }
 
-    if (
-      t < range.from
-      ||
-      t > range.to
-    ) {
+    if(t<range.from||t>range.to){
       outside++;
       continue;
     }
@@ -1981,1540 +784,690 @@ function inRangeScreenshots(
     out.push(s);
   }
 
-  return {
-    out,
-    outside,
-    invalid
-  };
+  return {out,outside,invalid};
 }
 
-async function evidence(
-  env,
-  i
-) {
-  const evidenceStartedAt =
-    Date.now();
+async function evidence(env,i){
+  const evidenceStartedAt=Date.now();
+  const tz=requireReportingTimezone(i.timezone);
+  const off=Number(i.timezoneOffsetMinutes||0);
 
-  const tz =
-    requireReportingTimezone(
-      i.timezone
-    );
+  const range=epochRange(
+    i.from,
+    i.to,
+    tz,
+    off
+  );
 
-  const off =
-    Number(
-      i.timezoneOffsetMinutes
-      ||
-      0
-    );
+  const activitiesStartedAt=Date.now();
+  const ar=await scrin(
+    env,
+    i.connectionId,
+    '/api/v2/GetActivities',
+    [{
+      employmentId:String(i.employmentId),
+      from:range.from,
+      to:range.to
+    }]
+  );
+  const activitiesFetchMs=Date.now()-activitiesStartedAt;
 
-  const range =
-    epochRange(
-      i.from,
-      i.to,
-      tz,
-      off
-    );
+  const raw=Array.isArray(ar.data)
+    ?ar.data
+    :[];
 
-  const activitiesStartedAt =
-    Date.now();
+  const ac=clipActivities(
+    raw,
+    range
+  );
 
-  const ar =
-    await scrin(
-      env,
-      i.connectionId,
-      '/api/v2/GetActivities',
-      [
-        {
-          employmentId:
-            String(
-              i.employmentId
-            ),
+  /*
+    IMPORTANT:
+    We fetch screenshot records for all raw activity IDs returned by Scrin,
+    then independently validate screenshot.taken against the exact reporting
+    window. This prevents screenshots attached to a boundary-crossing
+    activity from leaking into the selected day/month.
+  */
+  const sr=await screenshotsDetailed(
+    env,
+    i.connectionId,
+    raw.map(x=>x.id)
+  );
 
-          from:
-            range.from,
-
-          to:
-            range.to
-        }
-      ]
-    );
-
-  const activitiesFetchMs =
-    Date.now()
-    -
-    activitiesStartedAt;
-
-  const raw =
-    Array.isArray(
-      ar.data
-    )
-      ? ar.data
-      : [];
-
-  const ac =
-    clipActivities(
-      raw,
-      range
-    );
-
-  const sr =
-    await screenshotsDetailed(
-      env,
-      i.connectionId,
-      raw.map(
-        x => x.id
-      )
-    );
-
-  const sf =
-    inRangeScreenshots(
-      sr.screenshots,
-      range
-    );
+  const sf=inRangeScreenshots(
+    sr.screenshots,
+    range
+  );
 
   return {
-    connection:
-      ar.connection,
-
+    connection:ar.connection,
     range,
-
     tz,
-
     off,
+    rawActivities:raw,
+    activities:ac.used,
+    screenshots:sf.out,
 
-    rawActivities:
-      raw,
+    reconciliation:{
+      rawActivitiesReturned:raw.length,
+      activitiesUsed:ac.used.length,
+      activitiesExcludedOutsideRange:ac.outside,
+      activitiesClippedAtBoundary:ac.clipped,
+      invalidActivityRecords:ac.invalid,
 
-    activities:
-      ac.used,
-
-    screenshots:
-      sf.out,
-
-    reconciliation: {
-      rawActivitiesReturned:
-        raw.length,
-
-      activitiesUsed:
-        ac.used.length,
-
-      activitiesExcludedOutsideRange:
-        ac.outside,
-
-      activitiesClippedAtBoundary:
-        ac.clipped,
-
-      invalidActivityRecords:
-        ac.invalid,
-
-      rawScreenshotRecordsReturned:
-        sr.rawCount,
-
-      dedupedScreenshotRecords:
-        sr.dedupedCount,
-
-      duplicateScreenshotRecordsRemoved:
-        sr.duplicateCount,
-
-      screenshotFetchBatchCount:
-        sr.fetchBatchCount,
-
-      screenshotFetchConcurrency:
-        sr.fetchConcurrency,
-
-      screenshotFetchMs:
-        sr.elapsedMs,
-
+      rawScreenshotRecordsReturned:sr.rawCount,
+      dedupedScreenshotRecords:sr.dedupedCount,
+      duplicateScreenshotRecordsRemoved:sr.duplicateCount,
+      screenshotFetchBatchCount:sr.fetchBatchCount,
+      screenshotFetchRequestCount:sr.fetchRequestCount,
+      screenshotFetchSplitCount:sr.splitCount,
+      screenshotActivityIdsPerRequest:sr.activityIdsPerRequest,
+      screenshotFetchConcurrency:sr.fetchConcurrency,
+      screenshotFetchMs:sr.elapsedMs,
       activitiesFetchMs,
+      evidencePreparationMs:Date.now()-evidenceStartedAt,
 
-      evidencePreparationMs:
-        Date.now()
-        -
-        evidenceStartedAt,
+      screenshotsExcludedOutsideRange:sf.outside,
+      screenshotsExcludedInvalidTimestamp:sf.invalid,
 
-      screenshotsExcludedOutsideRange:
-        sf.outside,
+      finalScreenshotCount:sf.out.length,
 
-      screenshotsExcludedInvalidTimestamp:
-        sf.invalid,
-
-      finalScreenshotCount:
-        sf.out.length,
-
-      reportingTimezone:
-        validTz(tz)
-          ? tz
-          : null,
-
-      fallbackOffsetMinutes:
-        off,
-
-      reportingRangeFromEpoch:
-        range.from,
-
-      reportingRangeToEpoch:
-        range.to
+      reportingTimezone:validTz(tz)?tz:null,
+      fallbackOffsetMinutes:off,
+      reportingRangeFromEpoch:range.from,
+      reportingRangeToEpoch:range.to
     }
   };
 }
 
-function manifest(
-  shots,
-  tz = '',
-  off = 0
-) {
+function manifest(shots,tz='',off=0){
   return shots
-    .filter(
-      s =>
-        Number.isFinite(
-          Number(
-            s?.taken
-          )
-        )
-    )
-    .sort(
-      (a, b) =>
-        Number(a.taken)
-        -
-        Number(b.taken)
-    )
-    .map(
-      (s, index) => {
-        const apps =
-          Array.isArray(
-            s?.applications
-          )
-            ? s.applications
-            : [];
+    .filter(s=>Number.isFinite(Number(s?.taken)))
+    .sort((a,b)=>Number(a.taken)-Number(b.taken))
+    .map((s,index)=>{
+      const apps=Array.isArray(s?.applications)?s.applications:[];
+      const fg=apps.find(a=>a?.fromScreen)||apps[0];
 
-        const fg =
-          apps.find(
-            a =>
-              a?.fromScreen
-          )
-          ||
-          apps[0];
-
-        return {
-          index,
-
-          screenshotId:
-            String(
-              s.id
-              ||
-              `${s.activityId || 'activity'}:${s.taken}`
-            ),
-
-          activityId:
-            s.activityId
-              ? String(
-                  s.activityId
-                )
-              : '',
-
-          taken:
-            Number(
-              s.taken
-            ),
-
-          date:
-            localDate(
-              s.taken,
-              tz,
-              off
-            ),
-
-          time:
-            localTime(
-              s.taken,
-              tz,
-              off
-            ),
-
-          dateTime:
-            `${localDate(
-              s.taken,
-              tz,
-              off
-            )} ${localTime(
-              s.taken,
-              tz,
-              off
-            )}`,
-
-          application:
-            fg?.applicationName
-            ||
-            'Screenshot',
-
-          activityLevel:
-            Number.isFinite(
-              Number(
-                s.activityLevel
-              )
-            )
-              ? Number(
-                  s.activityLevel
-                )
-              : null,
-
-          imageUrl:
-            s.url || null,
-
-          thumbUrl:
-            s.thumbUrl || null
-        };
-      }
-    );
+      return {
+        index,
+        screenshotId:String(s.id||`${s.activityId||'activity'}:${s.taken}`),
+        activityId:s.activityId?String(s.activityId):'',
+        taken:Number(s.taken),
+        date:localDate(s.taken,tz,off),
+        time:localTime(s.taken,tz,off),
+        dateTime:`${localDate(s.taken,tz,off)} ${localTime(s.taken,tz,off)}`,
+        application:fg?.applicationName||'Screenshot',
+        activityLevel:Number.isFinite(Number(s.activityLevel))
+          ?Number(s.activityLevel)
+          :null,
+        imageUrl:s.url||null,
+        thumbUrl:s.thumbUrl||null
+      };
+    });
 }
 
-function dateCounts(m) {
-  const o = {};
+function dateCounts(m){
+  const o={};
 
-  for (const x of m) {
-    o[x.date] =
-      (
-        o[x.date]
-        ||
-        0
-      )
-      +
-      1;
+  for(const x of m){
+    o[x.date]=(o[x.date]||0)+1;
   }
 
   return o;
 }
 
-function humanSample(
-  m,
-  key
-) {
-  if (
-    !m.length
-  ) {
+function humanSample(m,key){
+  if(!m.length){
     return {
-      target:
-        0,
-
-      count:
-        0,
-
-      screenshots:
-        []
+      target:0,
+      count:0,
+      screenshots:[]
     };
   }
 
-  const rng =
-    rng32(
-      hash32(
-        `${key}|human`
-      )
-    );
+  const rng=rng32(
+    hash32(`${key}|human`)
+  );
 
-  const targetWanted =
-    HUMAN_SAMPLE_MIN
-    +
+  const targetWanted=
+    HUMAN_SAMPLE_MIN+
     Math.floor(
-      rng()
-      *
-      (
-        HUMAN_SAMPLE_MAX
-        -
-        HUMAN_SAMPLE_MIN
-        +
-        1
-      )
+      rng()*
+      (HUMAN_SAMPLE_MAX-HUMAN_SAMPLE_MIN+1)
     );
 
-  const target =
-    Math.min(
-      m.length,
-      targetWanted
-    );
+  const target=Math.min(
+    m.length,
+    targetWanted
+  );
 
-  const by =
-    new Map();
+  const by=new Map();
 
-  for (const x of m) {
-    if (
-      !by.has(
-        x.date
-      )
-    ) {
-      by.set(
-        x.date,
-        []
-      );
+  for(const x of m){
+    if(!by.has(x.date)){
+      by.set(x.date,[]);
     }
 
-    by.get(
-      x.date
-    )
-      .push(x);
+    by.get(x.date).push(x);
   }
 
-  const pools =
-    shuffle(
-      [...by.keys()].sort(),
-      rng
-    )
-      .map(
-        d => ({
-          a:
-            shuffle(
-              by.get(d),
-              rng
-            ),
+  const pools=shuffle(
+    [...by.keys()].sort(),
+    rng
+  ).map(d=>({
+    a:shuffle(by.get(d),rng),
+    i:0
+  }));
 
-          i:
-            0
-        })
-      );
+  const sel=[];
+  const seen=new Set();
 
-  const sel = [];
+  let progress=true;
 
-  const seen =
-    new Set();
+  while(sel.length<target&&progress){
+    progress=false;
 
-  let progress = true;
+    for(const p of pools){
+      while(p.i<p.a.length){
+        const x=p.a[p.i++];
 
-  while (
-    sel.length < target
-    &&
-    progress
-  ) {
-    progress = false;
-
-    for (const p of pools) {
-      while (
-        p.i < p.a.length
-      ) {
-        const x =
-          p.a[p.i++];
-
-        if (
-          !seen.has(
-            x.screenshotId
-          )
-        ) {
-          seen.add(
-            x.screenshotId
-          );
-
+        if(!seen.has(x.screenshotId)){
+          seen.add(x.screenshotId);
           sel.push(x);
-
-          progress = true;
-
+          progress=true;
           break;
         }
       }
 
-      if (
-        sel.length >= target
-      ) {
+      if(sel.length>=target){
         break;
       }
     }
   }
 
   return {
-    target:
-      targetWanted,
-
-    count:
-      sel.length,
-
-    screenshots:
-      sel.sort(
-        (a, b) =>
-          a.taken
-          -
-          b.taken
-      )
+    target:targetWanted,
+    count:sel.length,
+    screenshots:sel.sort((a,b)=>a.taken-b.taken)
   };
 }
 
-function appStats(shots) {
-  const t = {};
+function appStats(shots){
+  const t={};
 
-  for (const s of shots) {
-    for (
-      const a of
-        Array.isArray(
-          s?.applications
-        )
-          ? s.applications
-          : []
-    ) {
-      const n =
-        String(
-          a?.applicationName
-          ||
-          'Unknown'
-        )
-          .trim()
-        ||
-        'Unknown';
+  for(const s of shots){
+    for(const a of Array.isArray(s?.applications)?s.applications:[]){
+      const n=String(a?.applicationName||'Unknown').trim()||'Unknown';
+      const d=Number(a?.duration||0);
 
-      const d =
-        Number(
-          a?.duration
-          ||
-          0
-        );
-
-      t[n] =
-        (
-          t[n]
-          ||
-          0
-        )
-        +
-        (
-          Number.isFinite(d)
-            ? d
-            : 0
-        );
+      t[n]=(t[n]||0)+(Number.isFinite(d)?d:0);
     }
   }
 
-  const total =
-    Object.values(t)
-      .reduce(
-        (a, b) =>
-          a + b,
-        0
-      )
-    ||
-    1;
+  const total=Object.values(t).reduce((a,b)=>a+b,0)||1;
 
-  return (
-    Object.entries(t)
-      .sort(
-        (a, b) =>
-          b[1] - a[1]
-      )
-      .map(
-        ([name, seconds]) => ({
-          name,
-
-          seconds,
-
-          hours:
-            round(
-              seconds / 3600,
-              2
-            ),
-
-          sharePercent:
-            round(
-              seconds
-              /
-              total
-              *
-              100,
-              1
-            )
-        })
-      )
-  );
+  return Object.entries(t)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([name,seconds])=>({
+      name,
+      seconds,
+      hours:round(seconds/3600,2),
+      sharePercent:round(seconds/total*100,1)
+    }));
 }
 
-function urlStats(shots) {
-  const t = {};
+function urlStats(shots){
+  const t={};
 
-  for (const s of shots) {
-    for (
-      const a of
-        Array.isArray(
-          s?.applications
-        )
-          ? s.applications
-          : []
-    ) {
-      let v =
-        first(
-          a,
-          [
-            'url',
-            'webUrl',
-            'website',
-            'domain',
-            'host',
-            'hostname'
-          ],
-          ''
-        );
-
-      if (!v) {
-        continue;
-      }
-
-      try {
-        v =
-          new URL(
-            /^[a-z][\w+.-]*:\/\//i
-              .test(v)
-              ? v
-              : `https://${v}`
-          )
-            .hostname
-          ||
-          v;
-
-      } catch {}
-
-      const d =
-        Number(
-          a?.duration
-          ||
-          0
-        );
-
-      t[v] =
-        (
-          t[v]
-          ||
-          0
-        )
-        +
-        (
-          Number.isFinite(d)
-            ? d
-            : 0
-        );
-    }
-  }
-
-  const total =
-    Object.values(t)
-      .reduce(
-        (a, b) =>
-          a + b,
-        0
-      )
-    ||
-    1;
-
-  return (
-    Object.entries(t)
-      .sort(
-        (a, b) =>
-          b[1] - a[1]
-      )
-      .map(
-        ([domain, seconds]) => ({
-          domain,
-
-          seconds,
-
-          hours:
-            round(
-              seconds / 3600,
-              2
-            ),
-
-          sharePercent:
-            round(
-              seconds
-              /
-              total
-              *
-              100,
-              1
-            )
-        })
-      )
-  );
-}
-
-function avgActivity(shots) {
-  let t = 0;
-  let n = 0;
-
-  for (const s of shots) {
-    const v =
-      Number(
-        s?.activityLevel
+  for(const s of shots){
+    for(const a of Array.isArray(s?.applications)?s.applications:[]){
+      let v=first(
+        a,
+        ['url','webUrl','website','domain','host','hostname'],
+        ''
       );
 
-    if (
-      Number.isFinite(v)
-    ) {
-      t += v;
+      if(!v) continue;
+
+      try{
+        v=new URL(
+          /^[a-z][\w+.-]*:\/\//i.test(v)
+            ?v
+            :`https://${v}`
+        ).hostname||v;
+      }catch{}
+
+      const d=Number(a?.duration||0);
+
+      t[v]=(t[v]||0)+(Number.isFinite(d)?d:0);
+    }
+  }
+
+  const total=Object.values(t).reduce((a,b)=>a+b,0)||1;
+
+  return Object.entries(t)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([domain,seconds])=>({
+      domain,
+      seconds,
+      hours:round(seconds/3600,2),
+      sharePercent:round(seconds/total*100,1)
+    }));
+}
+
+function avgActivity(shots){
+  let t=0;
+  let n=0;
+
+  for(const s of shots){
+    const v=Number(s?.activityLevel);
+
+    if(Number.isFinite(v)){
+      t+=v;
       n++;
     }
   }
 
-  return n
-    ? round(
-        t / n,
-        1
-      )
-    : null;
+  return n?round(t/n,1):null;
 }
 
-function notes(
-  a,
-  limit = 20
-) {
-  return (
-    unique(
-      a
-        .map(
-          x =>
-            String(
-              x?.note || ''
-            )
-              .trim()
-        )
-        .filter(Boolean)
-    )
-      .slice(
-        0,
-        limit
-      )
-  );
+function notes(a,limit=20){
+  return unique(
+    a.map(x=>String(x?.note||'').trim())
+      .filter(Boolean)
+  ).slice(0,limit);
 }
 
-function firstLast(
-  a,
-  tz = '',
-  off = 0
-) {
-  const x =
-    a
-      .filter(
-        v =>
-          duration(v) > 0
-      )
-      .sort(
-        (a, b) =>
-          Number(a.from)
-          -
-          Number(b.from)
-      );
+function firstLast(a,tz='',off=0){
+  const x=a
+    .filter(v=>duration(v)>0)
+    .sort((a,b)=>Number(a.from)-Number(b.from));
 
-  if (
-    !x.length
-  ) {
+  if(!x.length){
     return {
-      firstTracked:
-        null,
-
-      lastTracked:
-        null
+      firstTracked:null,
+      lastTracked:null
     };
   }
 
-  const f =
-    Number(
-      x[0].from
-    );
-
-  const l =
-    Math.max(
-      ...x.map(
-        v =>
-          Number(v.to)
-      )
-    );
+  const f=Number(x[0].from);
+  const l=Math.max(...x.map(v=>Number(v.to)));
 
   return {
-    firstTracked: {
-      epoch:
-        f,
-
-      date:
-        localDate(
-          f,
-          tz,
-          off
-        ),
-
-      time:
-        localTime(
-          f,
-          tz,
-          off
-        )
+    firstTracked:{
+      epoch:f,
+      date:localDate(f,tz,off),
+      time:localTime(f,tz,off)
     },
 
-    lastTracked: {
-      epoch:
-        l,
-
-      date:
-        localDate(
-          l,
-          tz,
-          off
-        ),
-
-      time:
-        localTime(
-          l,
-          tz,
-          off
-        )
+    lastTracked:{
+      epoch:l,
+      date:localDate(l,tz,off),
+      time:localTime(l,tz,off)
     }
   };
 }
 
-function projectUsage(
-  a,
-  projects
-) {
-  const map =
-    new Map(
-      projects
-        .filter(
-          p =>
-            p.id != null
-        )
-        .map(
-          p => [
-            String(p.id),
-            p
-          ]
-        )
-    );
+function projectUsage(a,projects){
+  const map=new Map(
+    projects
+      .filter(p=>p.id!=null)
+      .map(p=>[String(p.id),p])
+  );
 
-  const tot =
-    new Map();
+  const tot=new Map();
 
-  for (const x of a) {
-    const k =
-      x?.projectId == null
-      ||
-      x?.projectId === ''
-        ? 'unassigned'
-        : String(
-            x.projectId
-          );
+  for(const x of a){
+    const k=
+      x?.projectId==null||
+      x?.projectId===''
+        ?'unassigned'
+        :String(x.projectId);
 
     tot.set(
       k,
-      (
-        tot.get(k)
-        ||
-        0
-      )
-      +
-      duration(x)
+      (tot.get(k)||0)+duration(x)
     );
   }
 
-  const total =
-    [...tot.values()]
-      .reduce(
-        (a, b) =>
-          a + b,
-        0
-      )
-    ||
-    1;
+  const total=[...tot.values()]
+    .reduce((a,b)=>a+b,0)||1;
 
-  return (
-    [...tot.entries()]
-      .sort(
-        (a, b) =>
-          b[1] - a[1]
-      )
-      .map(
-        ([k, seconds]) => ({
-          projectId:
-            k === 'unassigned'
-              ? null
-              : k,
-
-          name:
-            k === 'unassigned'
-              ? 'Unassigned'
-              : (
-                  map.get(k)?.name
-                  ||
-                  `Project ${k}`
-                ),
-
-          client:
-            map.get(k)?.client
-            ||
-            '',
-
-          seconds,
-
-          hours:
-            round(
-              seconds / 3600,
-              2
-            ),
-
-          sharePercent:
-            round(
-              seconds
-              /
-              total
-              *
-              100,
-              1
-            )
-        })
-      )
-  );
+  return [...tot.entries()]
+    .sort((a,b)=>b[1]-a[1])
+    .map(([k,seconds])=>({
+      projectId:k==='unassigned'?null:k,
+      name:k==='unassigned'
+        ?'Unassigned'
+        :map.get(k)?.name||`Project ${k}`,
+      client:map.get(k)?.client||'',
+      seconds,
+      hours:round(seconds/3600,2),
+      sharePercent:round(seconds/total*100,1)
+    }));
 }
 
-async function prepare(
-  env,
-  i
-) {
-  const prepareStartedAt =
-    Date.now();
+async function prepare(env,i){
+  const prepareStartedAt=Date.now();
+  const e=await evidence(env,i);
+  const pol=workPolicy(i);
 
-  const e =
-    await evidence(
-      env,
-      i
-    );
+  const m=manifest(
+    e.screenshots,
+    e.tz,
+    e.off
+  );
 
-  const pol =
-    workPolicy(i);
+  const metrics=activitySummary(
+    e.activities,
+    Number(i.adjustedExpectedHours??i.expectedHours??0),
+    e.tz,
+    e.off,
+    pol
+  );
 
-  const m =
-    manifest(
-      e.screenshots,
-      e.tz,
-      e.off
-    );
+  const key=sessionKey(i);
 
-  const metrics =
-    activitySummary(
-      e.activities,
-      Number(
-        i.adjustedExpectedHours
-        ??
-        i.expectedHours
-        ??
-        0
-      ),
-      e.tz,
-      e.off,
-      pol
-    );
+  const eligible=m.filter(
+    x=>x.imageUrl||x.thumbUrl
+  );
 
-  const key =
-    sessionKey(i);
+  const sample=humanSample(
+    eligible,
+    key
+  );
 
-  const eligible =
-    m.filter(
-      x =>
-        x.imageUrl
-        ||
-        x.thumbUrl
-    );
+  const batchSize=clamp(
+    Number(i.batchSize||BATCH_SIZE_DEFAULT),
+    8,
+    BATCH_MAX
+  );
 
-  const sample =
-    humanSample(
-      eligible,
-      key
-    );
-
-  const batchSize =
-    clamp(
-      Number(
-        i.batchSize
-        ||
-        BATCH_SIZE_DEFAULT
-      ),
-      8,
-      BATCH_MAX
-    );
-
-  const overlap =
-    clamp(
-      Math.max(
-        BATCH_OVERLAP_DEFAULT,
-        Number(
-          i.overlapSize
-          ??
-          BATCH_OVERLAP_DEFAULT
-        )
-      ),
-      0,
-      Math.min(
-        6,
-        batchSize - 1
-      )
-    );
-
-  const newPerBatch =
+  /*
+    Minimum overlap of 4 gives the AI enough chronological context
+    to detect patterns that cross batch boundaries, including
+    >10-minute stagnant sequences at typical Scrin capture frequency.
+  */
+  const overlap=clamp(
     Math.max(
-      1,
-      batchSize - overlap
-    );
+      BATCH_OVERLAP_DEFAULT,
+      Number(i.overlapSize??BATCH_OVERLAP_DEFAULT)
+    ),
+    0,
+    Math.min(6,batchSize-1)
+  );
+
+  const newPerBatch=Math.max(
+    1,
+    batchSize-overlap
+  );
 
   return {
-    sessionKey:
-      key,
+    sessionKey:key,
 
-    connection:
-      publicConnection(
-        e.connection
-      ),
+    connection:publicConnection(
+      e.connection
+    ),
 
-    period: {
-      from:
-        i.from,
-
-      to:
-        i.to,
-
-      dayCount:
-        dayCount(
-          i.from,
-          i.to
-        )
+    period:{
+      from:i.from,
+      to:i.to,
+      dayCount:dayCount(i.from,i.to)
     },
 
-    timezone: {
-      iana:
-        validTz(e.tz)
-          ? e.tz
-          : null,
-
-      fallbackOffsetMinutes:
-        e.off,
-
-      label:
-        validTz(e.tz)
-          ? e.tz
-          : `UTC${e.off >= 0 ? '+' : ''}${round(e.off / 60, 2)}`,
-
-      configurationRecommended:
-        !validTz(e.tz)
+    timezone:{
+      iana:validTz(e.tz)?e.tz:null,
+      fallbackOffsetMinutes:e.off,
+      label:validTz(e.tz)
+        ?e.tz
+        :`UTC${e.off>=0?'+':''}${round(e.off/60,2)}`,
+      configurationRecommended:!validTz(e.tz)
     },
 
-    workPolicy:
-      pol,
-
+    workPolicy:pol,
     metrics,
+    reconciliation:e.reconciliation,
 
-    reconciliation:
-      e.reconciliation,
-
-    preparationTiming: {
-      totalMs:
-        Date.now()
-        -
-        prepareStartedAt,
-
-      activitiesFetchMs:
-        e.reconciliation
-          .activitiesFetchMs
-        ||
-        0,
-
-      screenshotFetchMs:
-        e.reconciliation
-          .screenshotFetchMs
-        ||
-        0,
-
-      screenshotFetchBatchCount:
-        e.reconciliation
-          .screenshotFetchBatchCount
-        ||
-        0,
-
-      screenshotFetchConcurrency:
-        e.reconciliation
-          .screenshotFetchConcurrency
-        ||
-        0
+    preparationTiming:{
+      totalMs:Date.now()-prepareStartedAt,
+      activitiesFetchMs:e.reconciliation.activitiesFetchMs||0,
+      screenshotFetchMs:e.reconciliation.screenshotFetchMs||0,
+      screenshotFetchBatchCount:e.reconciliation.screenshotFetchBatchCount||0,
+      screenshotFetchConcurrency:e.reconciliation.screenshotFetchConcurrency||0
     },
 
-    screenshotCount:
-      m.length,
+    screenshotCount:m.length,
+    screenshotDates:unique(m.map(x=>x.date)).sort(),
+    screenshotDateCounts:dateCounts(m),
 
-    screenshotDates:
-      unique(
-        m.map(
-          x =>
-            x.date
-        )
-      )
-        .sort(),
+    manifest:m,
+    humanSample:sample,
 
-    screenshotDateCounts:
-      dateCounts(m),
-
-    manifest:
-      m,
-
-    humanSample:
-      sample,
-
-    scanPlan: {
+    scanPlan:{
       batchSize,
-
-      overlapSize:
-        overlap,
-
+      overlapSize:overlap,
       newPerBatch,
-
-      totalBatches:
-        m.length
-          ? Math.ceil(
-              m.length
-              /
-              newPerBatch
-            )
-          : 0,
-
-      internalBatching:
-        true
+      totalBatches:m.length
+        ?Math.ceil(m.length/newPerBatch)
+        :0,
+      internalBatching:true
     },
 
-    apps:
-      appStats(
-        e.screenshots
-      )
-        .slice(
-          0,
-          15
-        ),
+    apps:appStats(e.screenshots).slice(0,15),
 
-    review: {
-      status:
-        metrics.trackedHours > 0
-        &&
-        m.length
-          ? 'Green'
-          : 'Yellow',
+    review:{
+      status:metrics.trackedHours>0&&m.length
+        ?'Green'
+        :'Yellow',
 
       reasons:
-        metrics.trackedHours <= 0
-          ? [
-              'No tracked time returned.'
-            ]
-          : m.length
-            ? []
-            : [
-                'Tracked time exists but no screenshots returned.'
-              ],
+        metrics.trackedHours<=0
+          ?['No tracked time returned.']
+          :m.length
+            ?[]
+            :['Tracked time exists but no screenshots returned.'],
 
-      note:
-        'Evidence package prepared for full screenshot screening.'
+      note:'Evidence package prepared for full screenshot screening.'
     },
 
-    versions: {
-      analysisVersion:
-        ANALYSIS_VERSION,
-
-      rulesVersion:
-        RULES_VERSION,
-
-      promptVersion:
-        PROMPT_VERSION,
-
-      profileVersion:
-        PROFILE_VERSION
+    versions:{
+      analysisVersion:ANALYSIS_VERSION,
+      rulesVersion:RULES_VERSION,
+      promptVersion:PROMPT_VERSION,
+      profileVersion:PROFILE_VERSION
     }
   };
 }
 
-async function employeeProfile(
-  env,
-  i
-) {
-  const common =
-    await scrin(
-      env,
-      i.connectionId,
-      '/api/v2/GetCommonData',
-      {}
-    );
+async function employeeProfile(env,i){
+  const common=await scrin(
+    env,
+    i.connectionId,
+    '/api/v2/GetCommonData',
+    {}
+  );
 
-  const match =
-    findEmployment(
-      common.data,
-      i.employmentId
-    );
+  const match=findEmployment(
+    common.data,
+    i.employmentId
+  );
 
-  if (
-    !match.person
-  ) {
+  if(!match.person){
     throw new Error(
       `Employment ${i.employmentId} was not found in Scrin common data`
     );
   }
 
-  const e =
-    await evidence(
-      env,
-      i
-    );
+  const e=await evidence(env,i);
+  const pol=workPolicy(i);
 
-  const pol =
-    workPolicy(i);
+  const metrics=activitySummary(
+    e.activities,
+    Number(i.expectedHours||0),
+    e.tz,
+    e.off,
+    pol
+  );
 
-  const metrics =
-    activitySummary(
-      e.activities,
-      Number(
-        i.expectedHours
-        ||
-        0
-      ),
-      e.tz,
-      e.off,
-      pol
-    );
+  const fl=firstLast(
+    e.activities,
+    e.tz,
+    e.off
+  );
 
-  const fl =
-    firstLast(
-      e.activities,
-      e.tz,
-      e.off
-    );
+  const src=employmentSource(
+    match.person
+  );
 
-  const src =
-    employmentSource(
-      match.person
-    );
+  const projects=projectList(
+    common.data,
+    match.company
+  );
 
-  const projects =
-    projectList(
-      common.data,
-      match.company
-    );
+  const apps=appStats(
+    e.screenshots
+  );
 
-  const apps =
-    appStats(
-      e.screenshots
-    );
+  const urls=urlStats(
+    e.screenshots
+  );
 
-  const urls =
-    urlStats(
-      e.screenshots
-    );
-
-  const dates =
-    unique(
-      e.screenshots.map(
-        s =>
-          localDate(
-            s.taken,
-            e.tz,
-            e.off
-          )
-      )
+  const dates=unique(
+    e.screenshots.map(
+      s=>localDate(s.taken,e.tz,e.off)
     )
-      .sort();
+  ).sort();
 
   return {
-    profileVersion:
-      PROFILE_VERSION,
+    profileVersion:PROFILE_VERSION,
+    generatedAt:new Date().toISOString(),
+    demo:false,
 
-    generatedAt:
-      new Date()
-        .toISOString(),
+    employee:{
+      employmentId:String(match.person.id),
+      name:match.person.name||match.person.email||`Employment ${match.person.id}`,
+      email:match.person.email||null,
 
-    demo:
-      false,
+      registered:src.registered,
+      archived:src.archived,
+      active:src.active,
 
-    employee: {
-      employmentId:
-        String(
-          match.person.id
-        ),
+      sourceRole:src.role,
+      sourceTimezone:src.timezone,
+      sourceHourlyRate:src.hourlyRate,
+      sourceCurrency:src.currency,
+      invitedAt:src.invitedAt,
 
-      name:
-        match.person.name
-        ||
-        match.person.email
-        ||
-        `Employment ${match.person.id}`,
+      scrinCompanyId:match.company?.id??null,
+      scrinCompany:match.company?.name||'',
 
-      email:
-        match.person.email
-        ||
-        null,
-
-      registered:
-        src.registered,
-
-      archived:
-        src.archived,
-
-      active:
-        src.active,
-
-      sourceRole:
-        src.role,
-
-      sourceTimezone:
-        src.timezone,
-
-      sourceHourlyRate:
-        src.hourlyRate,
-
-      sourceCurrency:
-        src.currency,
-
-      invitedAt:
-        src.invitedAt,
-
-      scrinCompanyId:
-        match.company?.id
-        ??
-        null,
-
-      scrinCompany:
-        match.company?.name
-        ||
-        '',
-
-      connectionId:
-        common.connection.id,
-
-      connectionName:
-        common.connection.name
+      connectionId:common.connection.id,
+      connectionName:common.connection.name
     },
 
-    period: {
-      from:
-        i.from,
-
-      to:
-        i.to,
-
-      timezone:
-        validTz(e.tz)
-          ? e.tz
-          : null,
-
-      fallbackOffsetMinutes:
-        e.off
+    period:{
+      from:i.from,
+      to:i.to,
+      timezone:validTz(e.tz)?e.tz:null,
+      fallbackOffsetMinutes:e.off
     },
 
-    workPolicy:
-      pol,
+    workPolicy:pol,
 
-    workSummary: {
-      trackedSeconds:
-        metrics.trackedSeconds,
+    workSummary:{
+      trackedSeconds:metrics.trackedSeconds,
+      trackedHours:round(metrics.trackedHours,2),
 
-      trackedHours:
-        round(
-          metrics.trackedHours,
-          2
-        ),
+      onlineTrackedSeconds:metrics.onlineTrackedSeconds,
+      onlineTrackedHours:round(metrics.onlineTrackedHours,2),
 
-      onlineTrackedSeconds:
-        metrics.onlineTrackedSeconds,
+      offlineSeconds:metrics.offlineSeconds,
+      offlineHours:round(metrics.offlineHours,2),
 
-      onlineTrackedHours:
-        round(
-          metrics.onlineTrackedHours,
-          2
-        ),
+      activeDays:metrics.activeDays,
+      expectedHours:metrics.expectedHours,
+      scheduleCoveragePercent:metrics.scheduleCoveragePercent,
 
-      offlineSeconds:
-        metrics.offlineSeconds,
+      activityRecords:e.activities.length,
 
-      offlineHours:
-        round(
-          metrics.offlineHours,
-          2
-        ),
+      noteCount:e.activities
+        .filter(a=>String(a?.note||'').trim())
+        .length,
 
-      activeDays:
-        metrics.activeDays,
+      uniqueNoteCount:notes(
+        e.activities,
+        1000
+      ).length,
 
-      expectedHours:
-        metrics.expectedHours,
-
-      scheduleCoveragePercent:
-        metrics.scheduleCoveragePercent,
-
-      activityRecords:
-        e.activities.length,
-
-      noteCount:
-        e.activities
-          .filter(
-            a =>
-              String(
-                a?.note || ''
-              )
-                .trim()
-          )
-          .length,
-
-      uniqueNoteCount:
-        notes(
-          e.activities,
-          1000
-        )
-          .length,
-
-      firstTracked:
-        fl.firstTracked,
-
-      lastTracked:
-        fl.lastTracked
+      firstTracked:fl.firstTracked,
+      lastTracked:fl.lastTracked
     },
 
-    monitoring: {
-      screenshotCount:
-        e.screenshots.length,
-
-      captureDates:
-        dates.length,
-
-      screenshotDates:
-        dates,
-
-      averageActivityLevel:
-        avgActivity(
-          e.screenshots
-        ),
-
+    monitoring:{
+      screenshotCount:e.screenshots.length,
+      captureDates:dates.length,
+      screenshotDates:dates,
+      averageActivityLevel:avgActivity(e.screenshots),
       screenshotsPerTrackedHour:
-        metrics.trackedHours > 0
-          ? round(
-              e.screenshots.length
-              /
-              metrics.trackedHours,
-              2
-            )
-          : 0
+        metrics.trackedHours>0
+          ?round(e.screenshots.length/metrics.trackedHours,2)
+          :0
     },
 
-    reconciliation:
-      e.reconciliation,
+    reconciliation:e.reconciliation,
 
-    projects:
-      projectUsage(
-        e.activities,
-        projects
-      ),
+    projects:projectUsage(
+      e.activities,
+      projects
+    ),
 
-    availableProjects:
-      projects,
+    availableProjects:projects,
 
-    applications:
-      apps.slice(
-        0,
-        20
-      ),
+    applications:apps.slice(0,20),
+    urls:urls.slice(0,20),
+    notes:notes(e.activities,20),
 
-    urls:
-      urls.slice(
-        0,
-        20
-      ),
+    sourceSchema:{
+      employmentFields:fields(match.person),
+      companyFields:fields(match.company),
 
-    notes:
-      notes(
-        e.activities,
-        20
-      ),
-
-    sourceSchema: {
-      employmentFields:
-        fields(
-          match.person
-        ),
-
-      companyFields:
-        fields(
-          match.company
-        ),
-
-      projectFields:
-        unique(
-          projects.flatMap(
-            p =>
-              p.sourceFields || []
-          )
+      projectFields:unique(
+        projects.flatMap(
+          p=>p.sourceFields||[]
         )
-          .sort(),
+      ).sort(),
 
-      screenshotApplicationFields:
-        unique(
-          e.screenshots
-            .flatMap(
-              s =>
-                (
-                  Array.isArray(
-                    s?.applications
-                  )
-                    ? s.applications
-                    : []
-                )
-                  .flatMap(
-                    a =>
-                      fields(a)
-                  )
+      screenshotApplicationFields:unique(
+        e.screenshots.flatMap(
+          s=>
+            (Array.isArray(s?.applications)
+              ?s.applications
+              :[]
+            ).flatMap(
+              a=>fields(a)
             )
         )
-          .sort()
+      ).sort()
     },
 
-    sourceCapabilities: {
-      commonData:
-        true,
-
-      activities:
-        true,
-
-      screenshots:
-        true,
-
-      appsAndUrls:
-        apps.length > 0
-        ||
-        urls.length > 0,
-
-      projectsReturnedInCommonData:
-        projects.length > 0
+    sourceCapabilities:{
+      commonData:true,
+      activities:true,
+      screenshots:true,
+      appsAndUrls:apps.length>0||urls.length>0,
+      projectsReturnedInCommonData:projects.length>0
     }
   };
 }
 
-function responseText(d) {
-  if (
-    typeof d?.output_text ===
-      'string'
-    &&
-    d.output_text
-  ) {
+function responseText(d){
+  if(typeof d?.output_text==='string'&&d.output_text){
     return d.output_text;
   }
 
-  for (
-    const o of
-      Array.isArray(
-        d?.output
-      )
-        ? d.output
-        : []
-  ) {
-    for (
-      const c of
-        Array.isArray(
-          o?.content
-        )
-          ? o.content
-          : []
-    ) {
-      if (
-        c?.type === 'output_text'
-        &&
-        typeof c.text === 'string'
-      ) {
+  for(const o of Array.isArray(d?.output)?d.output:[]){
+    for(const c of Array.isArray(o?.content)?o.content:[]){
+      if(c?.type==='output_text'&&typeof c.text==='string'){
         return c.text;
       }
     }
@@ -3523,942 +1476,572 @@ function responseText(d) {
   return '';
 }
 
-async function aiJson(
-  env,
-  system,
-  user,
-  schemaName,
-  schema
-) {
-  const model =
-    env.OPENAI_SCREENING_MODEL
-    ||
-    env.OPENAI_MODEL;
+async function aiJson(env,system,user,schemaName,schema){
+  const model=env.OPENAI_SCREENING_MODEL||env.OPENAI_MODEL;
 
-  if (
-    !env.OPENAI_API_KEY
-    ||
-    !model
-  ) {
+  if(!env.OPENAI_API_KEY||!model){
     throw new Error(
       'AI screening requires OPENAI_API_KEY and OPENAI_SCREENING_MODEL (or OPENAI_MODEL).'
     );
   }
 
-  let lastError = null;
+  let lastError=null;
 
-  for (
-    let attempt = 0;
-    attempt < 3;
-    attempt++
-  ) {
-    const r =
-      await fetch(
-        'https://api.openai.com/v1/responses',
-        {
-          method:
-            'POST',
+  for(let attempt=0;attempt<3;attempt++){
+    const r=await fetch(
+      'https://api.openai.com/v1/responses',
+      {
+        method:'POST',
 
-          headers: {
-            Authorization:
-              `Bearer ${env.OPENAI_API_KEY}`,
+        headers:{
+          Authorization:`Bearer ${env.OPENAI_API_KEY}`,
+          'Content-Type':'application/json'
+        },
 
-            'Content-Type':
-              'application/json'
-          },
+        body:JSON.stringify({
+          model,
 
-          body:
-            JSON.stringify({
-              model,
+          input:[
+            {
+              role:'system',
+              content:system
+            },
+            {
+              role:'user',
+              content:user
+            }
+          ],
 
-              input: [
-                {
-                  role:
-                    'system',
+          text:{
+            format:{
+              type:'json_schema',
+              name:schemaName,
+              strict:true,
+              schema
+            }
+          }
+        })
+      }
+    );
 
-                  content:
-                    system
-                },
-                {
-                  role:
-                    'user',
+    let d={};
 
-                  content:
-                    user
-                }
-              ],
+    try{
+      d=await r.json();
+    }catch{}
 
-              text: {
-                format: {
-                  type:
-                    'json_schema',
+    if(r.ok){
+      const t=responseText(d);
 
-                  name:
-                    schemaName,
-
-                  strict:
-                    true,
-
-                  schema
-                }
-              }
-            })
-        }
-      );
-
-    let d = {};
-
-    try {
-      d =
-        await r.json();
-    } catch {}
-
-    if (r.ok) {
-      const t =
-        responseText(d);
-
-      if (!t) {
+      if(!t){
         throw new Error(
           'OpenAI returned no structured output text'
         );
       }
 
       return {
-        parsed:
-          JSON.parse(t),
-
+        parsed:JSON.parse(t),
         model,
-
-        responseId:
-          d.id || null
+        responseId:d.id||null
       };
     }
 
-    const e =
-      new Error(
-        `OpenAI ${r.status}: ${JSON.stringify(d).slice(0, 700)}`
-      );
+    const e=new Error(
+      `OpenAI ${r.status}: ${JSON.stringify(d).slice(0,700)}`
+    );
 
-    lastError =
-      e;
+    lastError=e;
 
-    const retryable =
-      [
-        408,
-        409,
-        429,
-        500,
-        502,
-        503,
-        504
-      ]
-        .includes(
-          r.status
-        );
+    const retryable=[
+      408,
+      409,
+      429,
+      500,
+      502,
+      503,
+      504
+    ].includes(r.status);
 
-    if (
-      !retryable
-      ||
-      attempt === 2
-    ) {
+    if(!retryable||attempt===2){
       throw e;
     }
 
-    const retryAfter =
-      Number(
-        r.headers.get(
-          'retry-after'
-        )
-        ||
-        0
-      );
+    const retryAfter=Number(
+      r.headers.get('retry-after')||0
+    );
 
-    const waitMs =
-      retryAfter > 0
-        ? retryAfter * 1000
-        : 700 * (attempt + 1);
+    const waitMs=
+      retryAfter>0
+        ?retryAfter*1000
+        :700*(attempt+1);
 
     await new Promise(
-      resolve =>
-        setTimeout(
-          resolve,
-          waitMs
-        )
+      resolve=>setTimeout(resolve,waitMs)
     );
   }
 
-  throw (
-    lastError
-    ||
-    new Error(
-      'OpenAI request failed'
-    )
-  );
+  throw lastError||
+    new Error('OpenAI request failed');
 }
 
-function normalizeShot(x) {
+function normalizeShot(x){
   return {
-    screenshotId:
-      String(
-        x?.screenshotId || ''
-      ),
+    screenshotId:String(x?.screenshotId||''),
+    activityId:String(x?.activityId||''),
+    taken:Number(x?.taken||0),
+    date:String(x?.date||''),
+    time:String(x?.time||''),
+    dateTime:String(x?.dateTime||''),
+    application:String(x?.application||'Screenshot'),
 
-    activityId:
-      String(
-        x?.activityId || ''
-      ),
+    activityLevel:Number.isFinite(Number(x?.activityLevel))
+      ?Number(x.activityLevel)
+      :null,
 
-    taken:
-      Number(
-        x?.taken || 0
-      ),
-
-    date:
-      String(
-        x?.date || ''
-      ),
-
-    time:
-      String(
-        x?.time || ''
-      ),
-
-    dateTime:
-      String(
-        x?.dateTime || ''
-      ),
-
-    application:
-      String(
-        x?.application
-        ||
-        'Screenshot'
-      ),
-
-    activityLevel:
-      Number.isFinite(
-        Number(
-          x?.activityLevel
-        )
-      )
-        ? Number(
-            x.activityLevel
-          )
-        : null,
-
-    imageUrl:
-      x?.imageUrl || null,
-
-    thumbUrl:
-      x?.thumbUrl || null
+    imageUrl:x?.imageUrl||null,
+    thumbUrl:x?.thumbUrl||null
   };
 }
 
-function batchContent(
-  shots,
-  counted,
-  batch,
-  total
-) {
-  const c = [
+function batchContent(shots,counted,batch,total){
+  const c=[
     {
-      type:
-        'input_text',
+      type:'input_text',
 
       text:
-        `Screening batch ${batch + 1} of ${total}. `
-        +
-        `Some screenshots overlap the prior batch. `
-        +
-        `Counted IDs: ${JSON.stringify(counted)}. `
-        +
+        `Screening batch ${batch+1} of ${total}. `+
+        `Some screenshots overlap the prior batch. `+
+        `Counted IDs: ${JSON.stringify(counted)}. `+
         `Return one screenshot object for every supplied screenshotId.`
     }
   ];
 
-  for (const s of shots) {
+  for(const s of shots){
     c.push({
-      type:
-        'input_text',
+      type:'input_text',
 
       text:
-        `SCREENSHOT id=${s.screenshotId}; `
-        +
-        `date=${s.date}; `
-        +
-        `time=${s.time}; `
-        +
-        `application=${s.application}; `
-        +
-        `activityLevel=${s.activityLevel ?? 'unknown'}`
+        `SCREENSHOT id=${s.screenshotId}; `+
+        `date=${s.date}; `+
+        `time=${s.time}; `+
+        `application=${s.application}; `+
+        `activityLevel=${s.activityLevel??'unknown'}`
     });
 
     c.push({
-      type:
-        'input_image',
-
-      image_url:
-        s.imageUrl,
-
-      detail:
-        'auto'
+      type:'input_image',
+      image_url:s.imageUrl,
+      detail:'auto'
     });
   }
 
   return c;
 }
 
-function normalizeChecks(
-  checks = []
-) {
-  const map =
-    new Map(
-      (
-        Array.isArray(checks)
-          ? checks
-          : []
-      )
-        .map(
-          x => [
-            x.key,
-            x
-          ]
-        )
-    );
+function normalizeChecks(checks=[]){
+  const map=new Map(
+    (Array.isArray(checks)?checks:[])
+      .map(x=>[x.key,x])
+  );
 
-  return (
-    CHECK_KEYS
-      .map(
-        k =>
-          map.get(k)
-          ||
-          {
-            key:
-              k,
+  return CHECK_KEYS.map(
+    k=>map.get(k)||{
+      key:k,
 
-            status:
-              k ===
-              'repeated_across_days'
-                ? 'not_assessed'
-                : 'clear',
+      status:
+        k==='repeated_across_days'
+          ?'not_assessed'
+          :'clear',
 
-            detail:
-              k ===
-              'repeated_across_days'
-                ? 'Cross-day replay assessment is finalized after the full-period first pass.'
-                : 'No review-worthy pattern returned in this segment.',
+      detail:
+        k==='repeated_across_days'
+          ?'Cross-day replay assessment is finalized after the full-period first pass.'
+          :'No review-worthy pattern returned in this segment.',
 
-            screenshotIds:
-              []
-          }
-      )
+      screenshotIds:[]
+    }
   );
 }
 
-function invalidImageError(e) {
-  const m =
-    String(
-      e?.message
-      ||
-      e
-      ||
-      ''
-    )
-      .toLowerCase();
+function invalidImageError(e){
+  const m=String(e?.message||e||'').toLowerCase();
 
   return (
-    m.includes(
-      'does not represent a valid image'
-    )
-    ||
-    m.includes(
-      'invalid image'
-    )
-    ||
-    m.includes(
-      'unsupported image'
-    )
-    ||
-    m.includes(
-      'image data you provided'
-    )
-    ||
-    m.includes(
-      'failed to download image'
-    )
-    ||
-    m.includes(
-      'could not download image'
-    )
-    ||
-    m.includes(
-      'error while downloading'
-    )
-    ||
-    m.includes(
-      'invalid_image'
-    )
-    ||
+    m.includes('does not represent a valid image')||
+    m.includes('invalid image')||
+    m.includes('unsupported image')||
+    m.includes('image data you provided')||
+    m.includes('failed to download image')||
+    m.includes('could not download image')||
+    m.includes('error while downloading')||
+    m.includes('invalid_image')||
     (
-      m.includes(
-        'invalid_value'
-      )
-      &&
-      m.includes(
-        'image'
-      )
+      m.includes('invalid_value')&&
+      m.includes('image')
     )
   );
 }
 
-function unavailable(
-  s,
-  reason
-) {
+function unavailable(s,reason){
   return {
-    screenshotId:
-      s.screenshotId,
+    screenshotId:s.screenshotId,
+    taken:s.taken,
+    date:s.date,
+    time:s.time,
+    dateTime:s.dateTime,
+    application:s.application,
 
-    taken:
-      s.taken,
+    status:'review',
+    visualKey:'evidence_unavailable',
 
-    date:
-      s.date,
-
-    time:
-      s.time,
-
-    dateTime:
-      s.dateTime,
-
-    application:
-      s.application,
-
-    status:
-      'review',
-
-    visualKey:
-      'evidence_unavailable',
-
-    reasons: [
+    reasons:[
       reason
     ],
 
-    signals:
-      [],
+    signals:[],
 
-    evidenceStatus:
-      'unavailable',
-
-    imageSource:
-      'none',
-
-    usedImageUrl:
-      null
+    evidenceStatus:'unavailable',
+    imageSource:'none',
+    usedImageUrl:null
   };
 }
 
-function normalizeAi(
-  ai,
-  shots,
-  source
-) {
-  const map =
-    new Map(
-      (
-        Array.isArray(
-          ai.parsed?.screenshots
-        )
-          ? ai.parsed.screenshots
-          : []
-      )
-        .map(
-          x => [
-            String(
-              x.screenshotId
-            ),
-            x
-          ]
-        )
+function normalizeAi(ai,shots,source){
+  const map=new Map(
+    (Array.isArray(ai.parsed?.screenshots)
+      ?ai.parsed.screenshots
+      :[]
+    ).map(
+      x=>[String(x.screenshotId),x]
+    )
+  );
+
+  const results=[];
+  const missing=[];
+
+  for(const s of shots){
+    const r=map.get(
+      s.screenshotId
     );
 
-  const results = [];
-  const missing = [];
-
-  for (const s of shots) {
-    const r =
-      map.get(
-        s.screenshotId
-      );
-
-    if (!r) {
+    if(!r){
       missing.push(
         s.screenshotId
       );
 
       results.push({
-        screenshotId:
-          s.screenshotId,
+        screenshotId:s.screenshotId,
+        taken:s.taken,
+        date:s.date,
+        time:s.time,
+        dateTime:s.dateTime,
+        application:s.application,
 
-        taken:
-          s.taken,
+        status:'review',
+        visualKey:'unclassified_missing_ai_result',
 
-        date:
-          s.date,
-
-        time:
-          s.time,
-
-        dateTime:
-          s.dateTime,
-
-        application:
-          s.application,
-
-        status:
-          'review',
-
-        visualKey:
-          'unclassified_missing_ai_result',
-
-        reasons: [
+        reasons:[
           'AI response omitted this screenshot.'
         ],
 
-        signals:
-          [],
+        signals:[],
 
-        evidenceStatus:
-          'missing_ai_result',
-
-        imageSource:
-          source,
-
-        usedImageUrl:
-          s.imageUrl
+        evidenceStatus:'missing_ai_result',
+        imageSource:source,
+        usedImageUrl:s.imageUrl
       });
 
       continue;
     }
 
     results.push({
-      screenshotId:
-        s.screenshotId,
+      screenshotId:s.screenshotId,
+      taken:s.taken,
+      date:s.date,
+      time:s.time,
+      dateTime:s.dateTime,
+      application:s.application,
 
-      taken:
-        s.taken,
+      status:r.status,
 
-      date:
-        s.date,
+      visualKey:String(
+        r.visualKey||'unclassified'
+      ).slice(0,120),
 
-      time:
-        s.time,
+      reasons:Array.isArray(r.reasons)
+        ?r.reasons.slice(0,5)
+        :[],
 
-      dateTime:
-        s.dateTime,
+      signals:Array.isArray(r.signals)
+        ?r.signals.slice(0,5)
+        :[],
 
-      application:
-        s.application,
-
-      status:
-        r.status,
-
-      visualKey:
-        String(
-          r.visualKey
-          ||
-          'unclassified'
-        )
-          .slice(
-            0,
-            120
-          ),
-
-      reasons:
-        Array.isArray(
-          r.reasons
-        )
-          ? r.reasons.slice(
-              0,
-              5
-            )
-          : [],
-
-      signals:
-        Array.isArray(
-          r.signals
-        )
-          ? r.signals.slice(
-              0,
-              5
-            )
-          : [],
-
-      evidenceStatus:
-        'screened',
-
-      imageSource:
-        source,
-
-      usedImageUrl:
-        s.imageUrl
+      evidenceStatus:'screened',
+      imageSource:source,
+      usedImageUrl:s.imageUrl
     });
   }
 
   return {
     results,
-
     missing,
 
-    checks:
-      normalizeChecks(
-        ai.parsed?.checks
-      ),
+    checks:normalizeChecks(
+      ai.parsed?.checks
+    ),
 
-    call: {
-      model:
-        ai.model,
-
-      responseId:
-        ai.responseId
+    call:{
+      model:ai.model,
+      responseId:ai.responseId
     }
   };
 }
 
-function mergeChecks(sets) {
-  return CHECK_KEYS
-    .map(
-      k => {
-        let status =
-          k ===
-          'repeated_across_days'
-            ? 'not_assessed'
-            : 'clear';
+function mergeChecks(sets){
+  return CHECK_KEYS.map(k=>{
+    let status=
+      k==='repeated_across_days'
+        ?'not_assessed'
+        :'clear';
 
-        const details = [];
-        const ids =
-          new Set();
+    const details=[];
+    const ids=new Set();
 
-        for (
-          const set of sets
-        ) {
-          const c =
-            (set || [])
-              .find(
-                x =>
-                  x.key === k
-              );
+    for(const set of sets){
+      const c=(set||[])
+        .find(x=>x.key===k);
 
-          if (!c) {
-            continue;
-          }
+      if(!c) continue;
 
-          if (
-            c.status === 'review'
-          ) {
-            status =
-              'review';
-
-          } else if (
-            c.status === 'not_assessed'
-            &&
-            status !== 'review'
-          ) {
-            status =
-              'not_assessed';
-          }
-
-          if (
-            c.detail
-          ) {
-            details.push(
-              c.detail
-            );
-          }
-
-          for (
-            const id of
-              c.screenshotIds || []
-          ) {
-            ids.add(
-              String(id)
-            );
-          }
-        }
-
-        return {
-          key:
-            k,
-
-          status,
-
-          detail:
-            unique(details)
-              .slice(
-                0,
-                3
-              )
-              .join(' ')
-            ||
-            (
-              status === 'clear'
-                ? 'No review-worthy pattern returned.'
-                : 'Additional assessment required.'
-            ),
-
-          screenshotIds:
-            [...ids]
-        };
+      if(c.status==='review'){
+        status='review';
+      } else if(
+        c.status==='not_assessed'&&
+        status!=='review'
+      ){
+        status='not_assessed';
       }
-    );
+
+      if(c.detail){
+        details.push(
+          c.detail
+        );
+      }
+
+      for(const id of c.screenshotIds||[]){
+        ids.add(
+          String(id)
+        );
+      }
+    }
+
+    return {
+      key:k,
+      status,
+
+      detail:
+        unique(details)
+          .slice(0,3)
+          .join(' ')||
+        (
+          status==='clear'
+            ?'No review-worthy pattern returned.'
+            :'Additional assessment required.'
+        ),
+
+      screenshotIds:[
+        ...ids
+      ]
+    };
+  });
 }
 
-async function scanSubset(
-  env,
-  shots,
-  counted,
-  batch,
-  total,
-  depth = 0
-) {
-  if (
-    !shots.length
-  ) {
+async function scanSubset(env,shots,counted,batch,total,depth=0){
+  if(!shots.length){
     return {
-      results:
-        [],
-
-      missing:
-        [],
-
-      unavailableIds:
-        [],
-
-      checks:
-        normalizeChecks([]),
-
-      calls:
-        []
+      results:[],
+      missing:[],
+      unavailableIds:[],
+      checks:normalizeChecks([]),
+      calls:[]
     };
   }
 
-  try {
-    const ai =
-      await aiJson(
-        env,
-        BATCH_PROMPT,
-        batchContent(
-          shots,
-          counted,
-          batch,
-          total
-        ),
-        'wgm_full_month_screening_batch',
-        BATCH_SCHEMA
-      );
-
-    const n =
-      normalizeAi(
-        ai,
+  try{
+    const ai=await aiJson(
+      env,
+      BATCH_PROMPT,
+      batchContent(
         shots,
-        depth
-          ? 'isolated_primary'
-          : 'primary'
-      );
+        counted,
+        batch,
+        total
+      ),
+      'wgm_full_month_screening_batch',
+      BATCH_SCHEMA
+    );
+
+    const n=normalizeAi(
+      ai,
+      shots,
+      depth?'isolated_primary':'primary'
+    );
 
     return {
-      results:
-        n.results,
-
-      missing:
-        n.missing,
-
-      unavailableIds:
-        [],
-
-      checks:
-        n.checks,
-
-      calls: [
-        n.call
-      ]
+      results:n.results,
+      missing:n.missing,
+      unavailableIds:[],
+      checks:n.checks,
+      calls:[n.call]
     };
 
-  } catch(e) {
-    if (
-      !invalidImageError(e)
-    ) {
+  }catch(e){
+    /*
+      If OpenAI reports an invalid image somewhere in a multi-image
+      batch, split the batch in half until the bad screenshot is
+      isolated. Good screenshots continue screening normally.
+    */
+    if(!invalidImageError(e)){
       throw e;
     }
 
-    if (
-      shots.length === 1
-    ) {
-      const s =
-        shots[0];
+    if(shots.length===1){
+      const s=shots[0];
 
-      if (
-        s.thumbUrl
-        &&
-        s.thumbUrl !==
-          s.imageUrl
-      ) {
-        try {
-          const ts = {
+      /*
+        Primary URL failed. Try Scrin thumbnail before marking the
+        evidence unavailable.
+      */
+      if(
+        s.thumbUrl&&
+        s.thumbUrl!==s.imageUrl
+      ){
+        try{
+          const ts={
             ...s,
-
-            imageUrl:
-              s.thumbUrl
+            imageUrl:s.thumbUrl
           };
 
-          const ai =
-            await aiJson(
-              env,
-              BATCH_PROMPT,
-              batchContent(
-                [ts],
-                counted.filter(
-                  id =>
-                    id ===
-                    s.screenshotId
-                ),
-                batch,
-                total
-              ),
-              'wgm_full_month_screening_batch',
-              BATCH_SCHEMA
-            );
-
-          const n =
-            normalizeAi(
-              ai,
+          const ai=await aiJson(
+            env,
+            BATCH_PROMPT,
+            batchContent(
               [ts],
-              'thumbnail'
-            );
+              counted.filter(
+                id=>id===s.screenshotId
+              ),
+              batch,
+              total
+            ),
+            'wgm_full_month_screening_batch',
+            BATCH_SCHEMA
+          );
+
+          const n=normalizeAi(
+            ai,
+            [ts],
+            'thumbnail'
+          );
 
           return {
-            results:
-              n.results,
-
-            missing:
-              n.missing,
-
-            unavailableIds:
-              [],
-
-            checks:
-              n.checks,
-
-            calls: [
-              n.call
-            ]
+            results:n.results,
+            missing:n.missing,
+            unavailableIds:[],
+            checks:n.checks,
+            calls:[n.call]
           };
 
-        } catch(te) {
-          if (
-            !invalidImageError(te)
-          ) {
+        }catch(te){
+          if(!invalidImageError(te)){
             throw te;
           }
         }
       }
 
+      /*
+        Both versions failed. Do NOT kill the report. Record the
+        evidence gap and continue.
+      */
       return {
-        results: [
+        results:[
           unavailable(
             s,
             'Primary and thumbnail image evidence could not be read as a valid image. Screening continued with the remaining screenshots.'
           )
         ],
 
-        missing:
-          [],
+        missing:[],
 
-        unavailableIds: [
+        unavailableIds:[
           s.screenshotId
         ],
 
-        checks:
-          normalizeChecks([]),
-
-        calls:
-          []
+        checks:normalizeChecks([]),
+        calls:[]
       };
     }
 
-    const mid =
-      Math.ceil(
-        shots.length / 2
-      );
+    const mid=Math.ceil(
+      shots.length/2
+    );
 
-    const left =
-      shots.slice(
-        0,
-        mid
-      );
+    const left=shots.slice(
+      0,
+      mid
+    );
 
-    const right =
-      shots.slice(
-        mid
-      );
+    const right=shots.slice(
+      mid
+    );
 
-    const lr =
-      await scanSubset(
-        env,
-        left,
-        counted.filter(
-          id =>
-            left.some(
-              s =>
-                s.screenshotId === id
-            )
-        ),
-        batch,
-        total,
-        depth + 1
-      );
+    const lr=await scanSubset(
+      env,
+      left,
+      counted.filter(
+        id=>left.some(
+          s=>s.screenshotId===id
+        )
+      ),
+      batch,
+      total,
+      depth+1
+    );
 
-    const rr =
-      await scanSubset(
-        env,
-        right,
-        counted.filter(
-          id =>
-            right.some(
-              s =>
-                s.screenshotId === id
-            )
-        ),
-        batch,
-        total,
-        depth + 1
-      );
+    const rr=await scanSubset(
+      env,
+      right,
+      counted.filter(
+        id=>right.some(
+          s=>s.screenshotId===id
+        )
+      ),
+      batch,
+      total,
+      depth+1
+    );
 
     return {
-      results: [
+      results:[
         ...lr.results,
         ...rr.results
       ],
 
-      missing:
-        unique([
-          ...lr.missing,
-          ...rr.missing
-        ]),
+      missing:unique([
+        ...lr.missing,
+        ...rr.missing
+      ]),
 
-      unavailableIds:
-        unique([
-          ...lr.unavailableIds,
-          ...rr.unavailableIds
-        ]),
+      unavailableIds:unique([
+        ...lr.unavailableIds,
+        ...rr.unavailableIds
+      ]),
 
-      checks:
-        mergeChecks([
-          lr.checks,
-          rr.checks
-        ]),
+      checks:mergeChecks([
+        lr.checks,
+        rr.checks
+      ]),
 
-      calls: [
+      calls:[
         ...lr.calls,
         ...rr.calls
       ]
@@ -4466,262 +2049,163 @@ async function scanSubset(
   }
 }
 
-async function scanBatch(
-  env,
-  i
-) {
-  const shots =
-    (
-      Array.isArray(
-        i.screenshots
-      )
-        ? i.screenshots
-        : []
-    )
-      .map(
-        normalizeShot
-      )
-      .filter(
-        x =>
-          x.screenshotId
-      );
+async function scanBatch(env,i){
+  const shots=(
+    Array.isArray(i.screenshots)
+      ?i.screenshots
+      :[]
+  )
+    .map(normalizeShot)
+    .filter(x=>x.screenshotId);
 
-  if (
-    !shots.length
-  ) {
+  if(!shots.length){
     throw new Error(
       'screenshots[] is required'
     );
   }
 
-  if (
-    shots.length >
-    BATCH_MAX
-  ) {
+  if(shots.length>BATCH_MAX){
     throw new Error(
       `A screening batch may contain at most ${BATCH_MAX} images`
     );
   }
 
-  const ids =
-    new Set(
-      shots.map(
-        x =>
-          x.screenshotId
-      )
+  const ids=new Set(
+    shots.map(x=>x.screenshotId)
+  );
+
+  const counted=unique(
+    (
+      Array.isArray(i.countedScreenshotIds)
+        ?i.countedScreenshotIds
+        :shots.map(x=>x.screenshotId)
+    )
+      .map(String)
+      .filter(id=>ids.has(id))
+  );
+
+  const batch=Math.max(
+    0,
+    Number(i.batchIndex||0)
+  );
+
+  const total=Math.max(
+    1,
+    Number(i.totalBatches||1)
+  );
+
+  /*
+    Screenshots without any image URL are marked unavailable
+    immediately. They do not abort the batch.
+  */
+  const none=shots.filter(
+    s=>!s.imageUrl&&!s.thumbUrl
+  );
+
+  const withImage=shots
+    .filter(
+      s=>s.imageUrl||s.thumbUrl
+    )
+    .map(
+      s=>({
+        ...s,
+        imageUrl:s.imageUrl||s.thumbUrl
+      })
     );
 
-  const counted =
-    unique(
-      (
-        Array.isArray(
-          i.countedScreenshotIds
-        )
-          ? i.countedScreenshotIds
-          : shots.map(
-              x =>
-                x.screenshotId
-            )
-      )
-        .map(String)
-        .filter(
-          id =>
-            ids.has(id)
-        )
-    );
+  const r=await scanSubset(
+    env,
+    withImage,
+    counted,
+    batch,
+    total
+  );
 
-  const batch =
-    Math.max(
-      0,
-      Number(
-        i.batchIndex || 0
-      )
-    );
+  const no=none.map(
+    s=>unavailable(
+      s,
+      'No primary or thumbnail image URL was supplied by Scrin. Screening continued with the remaining screenshots.'
+    )
+  );
 
-  const total =
-    Math.max(
-      1,
-      Number(
-        i.totalBatches || 1
-      )
-    );
-
-  const none =
-    shots.filter(
-      s =>
-        !s.imageUrl
-        &&
-        !s.thumbUrl
-    );
-
-  const withImage =
-    shots
-      .filter(
-        s =>
-          s.imageUrl
-          ||
-          s.thumbUrl
-      )
-      .map(
-        s => ({
-          ...s,
-
-          imageUrl:
-            s.imageUrl
-            ||
-            s.thumbUrl
-        })
-      );
-
-  const r =
-    await scanSubset(
-      env,
-      withImage,
-      counted,
-      batch,
-      total
-    );
-
-  const no =
-    none.map(
-      s =>
-        unavailable(
-          s,
-          'No primary or thumbnail image URL was supplied by Scrin. Screening continued with the remaining screenshots.'
-        )
-    );
-
-  const all = [
+  const all=[
     ...r.results,
     ...no
   ];
 
-  const unavailableIds =
-    unique([
-      ...r.unavailableIds,
+  const unavailableIds=unique([
+    ...r.unavailableIds,
+    ...no.map(
+      x=>x.screenshotId
+    )
+  ]);
 
-      ...no.map(
-        x =>
-          x.screenshotId
-      )
-    ]);
-
-  const success =
-    all
-      .filter(
-        x =>
-          x.evidenceStatus ===
-          'screened'
-      )
-      .map(
-        x =>
-          x.screenshotId
-      );
-
-  const reviewed =
-    counted.filter(
-      id =>
-        success.includes(id)
+  const success=all
+    .filter(
+      x=>x.evidenceStatus==='screened'
+    )
+    .map(
+      x=>x.screenshotId
     );
 
-  const unavailCounted =
-    counted.filter(
-      id =>
-        unavailableIds.includes(id)
-    );
+  const reviewed=counted.filter(
+    id=>success.includes(id)
+  );
+
+  const unavailCounted=counted.filter(
+    id=>unavailableIds.includes(id)
+  );
 
   return {
-    batchIndex:
-      batch,
+    batchIndex:batch,
+    totalBatches:total,
 
-    totalBatches:
-      total,
+    suppliedScreenshotCount:shots.length,
+    countedScreenshotCount:counted.length,
 
-    suppliedScreenshotCount:
-      shots.length,
+    countedReviewedCount:reviewed.length,
+    countedReviewedIds:reviewed,
 
-    countedScreenshotCount:
-      counted.length,
+    countedUnavailableCount:unavailCounted.length,
+    countedUnavailableIds:unavailCounted,
 
-    countedReviewedCount:
-      reviewed.length,
+    missingScreenshotIds:r.missing,
+    unavailableScreenshotIds:unavailableIds,
 
-    countedReviewedIds:
-      reviewed,
+    screenshots:all,
+    checks:r.checks,
 
-    countedUnavailableCount:
-      unavailCounted.length,
-
-    countedUnavailableIds:
-      unavailCounted,
-
-    missingScreenshotIds:
-      r.missing,
-
-    unavailableScreenshotIds:
-      unavailableIds,
-
-    screenshots:
-      all,
-
-    checks:
-      r.checks,
-
-    ai: {
-      calls:
-        r.calls,
-
-      callCount:
-        r.calls.length
+    ai:{
+      calls:r.calls,
+      callCount:r.calls.length
     }
   };
 }
 
-function resultMap(batches) {
-  const map =
-    new Map();
+function resultMap(batches){
+  const map=new Map();
 
-  const rank =
-    r =>
-      r?.evidenceStatus ===
-      'screened'
-        ? 3
-        : r?.evidenceStatus ===
-            'unavailable'
-          ? 2
-          : r?.evidenceStatus ===
-              'missing_ai_result'
-            ? 1
-            : 0;
+  const rank=r=>
+    r?.evidenceStatus==='screened'
+      ?3
+      :r?.evidenceStatus==='unavailable'
+        ?2
+        :r?.evidenceStatus==='missing_ai_result'
+          ?1
+          :0;
 
-  for (
-    const b of batches || []
-  ) {
-    for (
-      const r of
-        b?.screenshots || []
-    ) {
-      const id =
-        String(
-          r?.screenshotId || ''
-        );
+  for(const b of batches||[]){
+    for(const r of b?.screenshots||[]){
+      const id=String(
+        r?.screenshotId||''
+      );
 
-      if (!id) {
-        continue;
-      }
+      if(!id) continue;
 
-      const old =
-        map.get(id);
+      const old=map.get(id);
 
-      if (
-        !old
-        ||
-        rank(r) > rank(old)
-      ) {
-        map.set(
-          id,
-          r
-        );
+      if(!old||rank(r)>rank(old)){
+        map.set(id,r);
       }
     }
   }
@@ -4729,7 +2213,7 @@ function resultMap(batches) {
   return map;
 }
 
-function clearDetail(k) {
+function clearDetail(k){
   return {
     repeated_frozen:
       'No concerning unchanged-screen sequence was identified in screened evidence.',
@@ -4748,688 +2232,418 @@ function clearDetail(k) {
   }[k];
 }
 
-function aggregateChecks(batches) {
+function aggregateChecks(batches){
   return [
     'repeated_frozen',
     'repetitive_cycling',
     'activity_simulation',
     'prolonged_stagnation_10m'
-  ]
-    .map(
-      k => {
-        let status =
-          'clear';
+  ].map(k=>{
+    let status='clear';
 
-        const d = [];
+    const d=[];
+    const ids=new Set();
 
-        const ids =
-          new Set();
+    for(const b of batches||[]){
+      const c=(b?.checks||[])
+        .find(x=>x.key===k);
 
-        for (
-          const b of batches || []
-        ) {
-          const c =
-            (b?.checks || [])
-              .find(
-                x =>
-                  x.key === k
-              );
+      if(!c) continue;
 
-          if (!c) {
-            continue;
-          }
-
-          if (
-            c.status ===
-            'review'
-          ) {
-            status =
-              'review';
-
-          } else if (
-            c.status ===
-              'not_assessed'
-            &&
-            status !==
-              'review'
-          ) {
-            status =
-              'not_assessed';
-          }
-
-          if (
-            c.detail
-          ) {
-            d.push(
-              c.detail
-            );
-          }
-
-          for (
-            const id of
-              c.screenshotIds || []
-          ) {
-            ids.add(
-              String(id)
-            );
-          }
-        }
-
-        return {
-          key:
-            k,
-
-          status,
-
-          detail:
-            status === 'review'
-              ? unique(d)
-                  .slice(
-                    0,
-                    2
-                  )
-                  .join(' ')
-              : status ===
-                  'not_assessed'
-                ? 'This check requires additional review because one or more screening segments were incomplete.'
-                : clearDetail(k),
-
-          screenshotIds:
-            [...ids]
-        };
+      if(c.status==='review'){
+        status='review';
+      } else if(
+        c.status==='not_assessed'&&
+        status!=='review'
+      ){
+        status='not_assessed';
       }
-    );
+
+      if(c.detail){
+        d.push(c.detail);
+      }
+
+      for(const id of c.screenshotIds||[]){
+        ids.add(String(id));
+      }
+    }
+
+    return {
+      key:k,
+      status,
+
+      detail:
+        status==='review'
+          ?unique(d).slice(0,2).join(' ')
+          :status==='not_assessed'
+            ?'This check requires additional review because one or more screening segments were incomplete.'
+            :clearDetail(k),
+
+      screenshotIds:[
+        ...ids
+      ]
+    };
+  });
 }
 
-function replayCandidates(map) {
-  const by =
-    new Map();
+function replayCandidates(map){
+  const by=new Map();
 
-  for (
-    const r of map.values()
-  ) {
-    if (
-      !r?.date
-      ||
-      !r?.visualKey
-      ||
+  for(const r of map.values()){
+    if(
+      !r?.date||
+      !r?.visualKey||
       [
         'evidence_unavailable',
         'unclassified_missing_ai_result'
-      ]
-        .includes(
-          r.visualKey
-        )
-    ) {
+      ].includes(r.visualKey)
+    ){
       continue;
     }
 
-    if (
-      !by.has(
-        r.date
-      )
-    ) {
-      by.set(
-        r.date,
-        []
-      );
+    if(!by.has(r.date)){
+      by.set(r.date,[]);
     }
 
-    by.get(
-      r.date
-    )
-      .push(r);
+    by.get(r.date).push(r);
   }
 
-  for (
-    const a of by.values()
-  ) {
+  for(const a of by.values()){
     a.sort(
-      (x, y) =>
-        Number(
-          x.taken || 0
-        )
-        -
-        Number(
-          y.taken || 0
-        )
+      (x,y)=>Number(x.taken||0)-Number(y.taken||0)
     );
   }
 
-  const seq =
-    new Map();
+  const seq=new Map();
 
-  for (
-    const [date, a] of by
-  ) {
-    for (
-      let i = 0;
-      i <= a.length - 3;
-      i++
-    ) {
-      const slice =
-        a.slice(
-          i,
-          i + 3
-        );
+  for(const [date,a] of by){
+    for(let i=0;i<=a.length-3;i++){
+      const slice=a.slice(i,i+3);
 
-      const sig =
-        slice
-          .map(
-            x =>
-              x.visualKey
-          )
-          .join('>>');
+      const sig=slice
+        .map(x=>x.visualKey)
+        .join('>>');
 
-      if (
-        !seq.has(sig)
-      ) {
-        seq.set(
-          sig,
-          []
-        );
+      if(!seq.has(sig)){
+        seq.set(sig,[]);
       }
 
-      seq.get(sig)
-        .push({
-          date,
-
-          screenshotIds:
-            slice.map(
-              x =>
-                x.screenshotId
-            )
-        });
+      seq.get(sig).push({
+        date,
+        screenshotIds:slice.map(
+          x=>x.screenshotId
+        )
+      });
     }
   }
 
-  const out = [];
+  const out=[];
 
-  for (
-    const [
-      signature,
-      occurrences
-    ] of seq
-  ) {
-    const dates =
-      unique(
-        occurrences.map(
-          x =>
-            x.date
-        )
-      );
+  for(const [signature,occurrences] of seq){
+    const dates=unique(
+      occurrences.map(x=>x.date)
+    );
 
-    if (
-      dates.length < 2
-    ) {
+    if(dates.length<2){
       continue;
     }
 
     out.push({
       signature,
-
       dates,
-
       occurrences,
 
-      screenshotIds:
-        unique(
-          occurrences.flatMap(
-            x =>
-              x.screenshotIds
-          )
+      screenshotIds:unique(
+        occurrences.flatMap(
+          x=>x.screenshotIds
         )
-          .slice(
-            0,
-            24
-          )
+      ).slice(0,24)
     });
   }
 
-  return (
-    out
-      .sort(
-        (a, b) =>
-          b.dates.length
-          -
-          a.dates.length
-      )
-      .slice(
-        0,
-        8
-      )
-  );
+  return out
+    .sort(
+      (a,b)=>b.dates.length-a.dates.length
+    )
+    .slice(0,8);
 }
 
-async function crossDay(
-  env,
-  candidates,
-  m,
-  map
-) {
-  if (
-    !candidates.length
-  ) {
+async function crossDay(env,candidates,m,map){
+  if(!candidates.length){
     return {
-      key:
-        'repeated_across_days',
-
-      status:
-        'clear',
-
-      detail:
-        clearDetail(
-          'repeated_across_days'
-        ),
-
-      screenshotIds:
-        [],
-
-      candidateGroupsReviewed:
-        0
+      key:'repeated_across_days',
+      status:'clear',
+      detail:clearDetail('repeated_across_days'),
+      screenshotIds:[],
+      candidateGroupsReviewed:0
     };
   }
 
-  const mm =
-    new Map(
-      m.map(
-        x => [
-          String(
-            x.screenshotId
-          ),
-          x
-        ]
-      )
-    );
+  const mm=new Map(
+    m.map(
+      x=>[String(x.screenshotId),x]
+    )
+  );
 
-  const content = [
+  const content=[
     {
-      type:
-        'input_text',
-
-      text:
-        `Cross-day candidates: ${JSON.stringify(
-          candidates.map(
-            x => ({
-              dates:
-                x.dates,
-
-              screenshotIds:
-                x.screenshotIds
-            })
-          )
-        )}`
+      type:'input_text',
+      text:`Cross-day candidates: ${JSON.stringify(candidates.map(x=>({dates:x.dates,screenshotIds:x.screenshotIds})))}`
     }
   ];
 
-  for (
-    const id of
-      unique(
-        candidates.flatMap(
-          x =>
-            x.screenshotIds
-        )
+  for(
+    const id of unique(
+      candidates.flatMap(
+        x=>x.screenshotIds
       )
-        .slice(
-          0,
-          24
-        )
-  ) {
-    const shot =
-      mm.get(id);
+    ).slice(0,24)
+  ){
+    const shot=mm.get(id);
+    const screened=map.get(id);
 
-    const screened =
-      map.get(id);
-
-    const url =
-      screened?.usedImageUrl
-      ||
-      shot?.imageUrl
-      ||
+    const url=
+      screened?.usedImageUrl||
+      shot?.imageUrl||
       shot?.thumbUrl;
 
-    if (
-      !shot
-      ||
-      !url
-    ) {
+    if(!shot||!url){
       continue;
     }
 
     content.push(
       {
-        type:
-          'input_text',
+        type:'input_text',
 
         text:
-          `CANDIDATE id=${shot.screenshotId}; `
-          +
-          `date=${shot.date}; `
-          +
-          `time=${shot.time}; `
-          +
+          `CANDIDATE id=${shot.screenshotId}; `+
+          `date=${shot.date}; `+
+          `time=${shot.time}; `+
           `application=${shot.application}`
       },
       {
-        type:
-          'input_image',
-
-        image_url:
-          url,
-
-        detail:
-          'auto'
+        type:'input_image',
+        image_url:url,
+        detail:'auto'
       }
     );
   }
 
-  try {
-    const ai =
-      await aiJson(
-        env,
-        CROSS_DAY_PROMPT,
-        content,
-        'wgm_cross_day_replay_check',
-        CROSS_DAY_SCHEMA
-      );
+  try{
+    const ai=await aiJson(
+      env,
+      CROSS_DAY_PROMPT,
+      content,
+      'wgm_cross_day_replay_check',
+      CROSS_DAY_SCHEMA
+    );
 
     return {
-      key:
-        'repeated_across_days',
+      key:'repeated_across_days',
+      status:ai.parsed.status,
+      detail:ai.parsed.detail,
 
-      status:
-        ai.parsed.status,
+      screenshotIds:unique(
+        ai.parsed.screenshotIds||[]
+      ),
 
-      detail:
-        ai.parsed.detail,
+      candidateGroupsReviewed:candidates.length,
 
-      screenshotIds:
-        unique(
-          ai.parsed
-            .screenshotIds
-          ||
-          []
-        ),
-
-      candidateGroupsReviewed:
-        candidates.length,
-
-      ai: {
-        model:
-          ai.model,
-
-        responseId:
-          ai.responseId
+      ai:{
+        model:ai.model,
+        responseId:ai.responseId
       }
     };
 
-  } catch(e) {
+  }catch(e){
+    /*
+      Cross-day verification should not destroy an otherwise usable
+      screening run. It becomes not_assessed and is disclosed.
+    */
     return {
-      key:
-        'repeated_across_days',
-
-      status:
-        'not_assessed',
+      key:'repeated_across_days',
+      status:'not_assessed',
 
       detail:
         `Cross-day replay verification could not be completed: ${e.message}`,
 
-      screenshotIds:
-        [],
-
-      candidateGroupsReviewed:
-        candidates.length
+      screenshotIds:[],
+      candidateGroupsReviewed:candidates.length
     };
   }
 }
 
-async function finalize(
-  env,
-  i
-) {
-  const m =
-    (
-      Array.isArray(
-        i.manifest
-      )
-        ? i.manifest
-        : []
-    )
-      .map(
-        normalizeShot
-      )
+async function finalize(env,i){
+  const m=(
+    Array.isArray(i.manifest)
+      ?i.manifest
+      :[]
+  )
+    .map(normalizeShot)
+    .filter(x=>x.screenshotId);
+
+  const b=Array.isArray(i.batchResults)
+    ?i.batchResults
+    :[];
+
+  const expected=Number(
+    i.expectedScreenshots??
+    m.length??
+    0
+  );
+
+  const map=resultMap(b);
+
+  const success=unique(
+    [...map.values()]
       .filter(
-        x =>
-          x.screenshotId
-      );
-
-  const b =
-    Array.isArray(
-      i.batchResults
-    )
-      ? i.batchResults
-      : [];
-
-  const expected =
-    Number(
-      i.expectedScreenshots
-      ??
-      m.length
-      ??
-      0
-    );
-
-  const map =
-    resultMap(b);
-
-  const success =
-    unique(
-      [...map.values()]
-        .filter(
-          r =>
-            r.evidenceStatus ===
-              'screened'
-            &&
-            ![
-              'evidence_unavailable',
-              'unclassified_missing_ai_result'
-            ]
-              .includes(
-                r.visualKey
-              )
-        )
-        .map(
-          r =>
-            String(
-              r.screenshotId
-            )
-        )
-    );
-
-  const unavailableIds =
-    unique(
-      b.flatMap(
-        x =>
-          Array.isArray(
-            x?.unavailableScreenshotIds
-          )
-            ? x.unavailableScreenshotIds
-                .map(String)
-            : []
+        r=>
+          r.evidenceStatus==='screened'&&
+          ![
+            'evidence_unavailable',
+            'unclassified_missing_ai_result'
+          ].includes(r.visualKey)
       )
-    );
-
-  const missing =
-    m
       .map(
-        x =>
-          x.screenshotId
+        r=>String(r.screenshotId)
       )
-      .filter(
-        id =>
-          !success.includes(id)
-          &&
-          !unavailableIds.includes(id)
-      );
+  );
 
-  const coverage =
-    expected > 0
-      ? round(
-          success.length
-          /
-          expected
-          *
-          100,
+  const unavailableIds=unique(
+    b.flatMap(
+      x=>
+        Array.isArray(x?.unavailableScreenshotIds)
+          ?x.unavailableScreenshotIds.map(String)
+          :[]
+    )
+  );
+
+  const missing=m
+    .map(x=>x.screenshotId)
+    .filter(
+      id=>
+        !success.includes(id)&&
+        !unavailableIds.includes(id)
+    );
+
+  const coverage=
+    expected>0
+      ?round(
+          success.length/expected*100,
           1
         )
-      : 100;
+      :100;
 
-  const full =
-    expected === 0
-    ||
-    success.length ===
-      expected;
+  const full=
+    expected===0||
+    success.length===expected;
 
-  const complete =
-    expected === 0
-    ||
-    coverage >=
-      MIN_SCREENING_COVERAGE;
+  const complete=
+    expected===0||
+    coverage>=MIN_SCREENING_COVERAGE;
 
-  const gap =
-    Math.max(
-      0,
-      expected
-      -
-      success.length
-    );
+  const gap=Math.max(
+    0,
+    expected-success.length
+  );
 
-  const candidates =
-    replayCandidates(
-      map
-    );
+  const candidates=replayCandidates(
+    map
+  );
 
-  const cross =
+  const cross=
     complete
-      ? await crossDay(
+      ?await crossDay(
           env,
           candidates,
           m,
           map
         )
-      : {
-          key:
-            'repeated_across_days',
-
-          status:
-            'not_assessed',
+      :{
+          key:'repeated_across_days',
+          status:'not_assessed',
 
           detail:
             `Cross-day replay verification was not finalized because visual screening coverage was ${coverage}%, below the ${MIN_SCREENING_COVERAGE}% completion threshold.`,
 
-          screenshotIds:
-            [],
-
-          candidateGroupsReviewed:
-            0
+          screenshotIds:[],
+          candidateGroupsReviewed:0
         };
 
-  const checks = [
+  const checks=[
     ...aggregateChecks(b),
     cross
   ];
 
-  const findings =
-    checks
-      .filter(
-        x =>
-          x.status === 'review'
-      )
-      .map(
-        x => ({
-          type:
-            x.key,
+  const findings=checks
+    .filter(
+      x=>x.status==='review'
+    )
+    .map(
+      x=>({
+        type:x.key,
+        reason:x.detail,
+        screenshotIds:unique(
+          x.screenshotIds||[]
+        )
+      })
+    );
 
-          reason:
-            x.detail,
-
-          screenshotIds:
-            unique(
-              x.screenshotIds || []
-            )
-        })
-      );
-
-  if (
-    gap > 0
-  ) {
+  if(gap>0){
     findings.push({
-      type:
-        complete
-          ? 'evidence_gap'
-          : 'incomplete_screening',
+      type:complete
+        ?'evidence_gap'
+        :'incomplete_screening',
 
       reason:
         complete
-          ? `${gap} of ${expected} supplied screenshot records were unavailable for successful AI visual review. Visual screening coverage was ${coverage}%. Human review should account for this evidence gap.`
-          : `Only ${coverage}% of supplied screenshot records were successfully screened. At least ${MIN_SCREENING_COVERAGE}% coverage is required.`,
+          ?`${gap} of ${expected} supplied screenshot records were unavailable for successful AI visual review. Visual screening coverage was ${coverage}%. Human review should account for this evidence gap.`
+          :`Only ${coverage}% of supplied screenshot records were successfully screened. At least ${MIN_SCREENING_COVERAGE}% coverage is required.`,
 
-      screenshotIds:
-        unique([
-          ...unavailableIds,
-          ...missing
-        ])
-          .slice(
-            0,
-            24
-          )
+      screenshotIds:unique([
+        ...unavailableIds,
+        ...missing
+      ]).slice(0,24)
     });
   }
 
-  const flagged =
-    unique(
-      findings
-        .filter(
-          x =>
-            ![
-              'evidence_gap',
-              'incomplete_screening'
-            ]
-              .includes(
-                x.type
-              )
-        )
-        .flatMap(
-          x =>
-            x.screenshotIds || []
-        )
-    );
+  const flagged=unique(
+    findings
+      .filter(
+        x=>![
+          'evidence_gap',
+          'incomplete_screening'
+        ].includes(x.type)
+      )
+      .flatMap(
+        x=>x.screenshotIds||[]
+      )
+  );
 
-  const headline =
+  const headline=
     !complete
-      ? `Screening incomplete — ${coverage}% visual coverage.`
-      : flagged.length
-        ? `${flagged.length} questionable screenshot${flagged.length === 1 ? '' : 's'} need human context.`
-        : !full
-          ? 'No suspicious patterns identified in the screenshots successfully screened.'
-          : 'No suspicious patterns found.';
+      ?`Screening incomplete — ${coverage}% visual coverage.`
+      :flagged.length
+        ?`${flagged.length} questionable screenshot${flagged.length===1?'':'s'} need human context.`
+        :!full
+          ?'No suspicious patterns identified in the screenshots successfully screened.'
+          :'No suspicious patterns found.';
 
   return {
     overallResult:
       findings.length
-        ? 'review'
-        : 'clear',
+        ?'review'
+        :'clear',
 
     screeningHeadline:
       headline,
 
     screeningSubtext:
       full
-        ? `AI successfully screened all ${success.length.toLocaleString()} supplied screenshot images. Human review is still required before release.`
-        : `AI successfully screened ${success.length.toLocaleString()} of ${expected.toLocaleString()} supplied screenshot records (${coverage}% visual coverage). ${gap.toLocaleString()} record(s) were unavailable or unresolved.`,
+        ?`AI successfully screened all ${success.length.toLocaleString()} supplied screenshot images. Human review is still required before release.`
+        :`AI successfully screened ${success.length.toLocaleString()} of ${expected.toLocaleString()} supplied screenshot records (${coverage}% visual coverage). ${gap.toLocaleString()} record(s) were unavailable or unresolved.`,
 
     checks,
-
     findings,
 
     aiFlaggedScreenshotIds:
@@ -5450,6 +2664,12 @@ async function finalize(
     screeningComplete:
       complete,
 
+    /*
+      fullCoverage tells us whether literally every image was read.
+      allScreenshotsScreened is retained for compatibility with the
+      current reviewer UI and now means the screening met the V2.1
+      completion threshold.
+    */
     fullCoverage:
       full,
 
@@ -5474,55 +2694,35 @@ async function finalize(
     scopeNote:
       `Review scope: supplied Scrin screenshot images and verified metadata. ${coverage}% of supplied screenshot records were successfully visually screened. Hidden automation and physical mouse movers may not be visible. Screening flags are not automated findings of misconduct.`,
 
-    versions: {
-      analysisVersion:
-        ANALYSIS_VERSION,
-
-      rulesVersion:
-        RULES_VERSION,
-
-      promptVersion:
-        PROMPT_VERSION,
-
-      profileVersion:
-        PROFILE_VERSION
+    versions:{
+      analysisVersion:ANALYSIS_VERSION,
+      rulesVersion:RULES_VERSION,
+      promptVersion:PROMPT_VERSION,
+      profileVersion:PROFILE_VERSION
     }
   };
 }
 
-function demoCommon() {
+function demoCommon(){
   return {
-    companies: [
+    companies:[
       {
-        id:
-          1,
+        id:1,
+        name:'Demo Company',
 
-        name:
-          'Demo Company',
-
-        projects: [
+        projects:[
           {
-            id:
-              10,
-
-            name:
-              'Demo Project'
+            id:10,
+            name:'Demo Project'
           }
         ],
 
-        employments: [
+        employments:[
           {
-            id:
-              100,
-
-            name:
-              'Sample VA',
-
-            email:
-              'sample@example.com',
-
-            registered:
-              true
+            id:100,
+            name:'Sample VA',
+            email:'sample@example.com',
+            registered:true
           }
         ]
       }
@@ -5530,344 +2730,193 @@ function demoCommon() {
   };
 }
 
-function demoPrepared(i = {}) {
-  const from =
-    i.from
-    ||
-    '2026-09-01';
+function demoPrepared(i={}){
+  const from=i.from||'2026-09-01';
+  const to=i.to||from;
 
-  const to =
-    i.to
-    ||
-    from;
+  const key=sessionKey({
+    ...i,
+    from,
+    to
+  });
 
-  const key =
-    sessionKey({
-      ...i,
-      from,
-      to
-    });
+  const m=[];
 
-  const m = [];
-
-  for (
-    let d = 0;
-    d <
-    Math.min(
-      5,
-      dayCount(
-        from,
-        to
-      )
-      ||
-      1
-    );
+  for(
+    let d=0;
+    d<Math.min(5,dayCount(from,to)||1);
     d++
-  ) {
-    const date =
-      addDays(
-        from,
-        d
-      );
+  ){
+    const date=addDays(from,d);
 
-    for (
-      let n = 0;
-      n < 6;
-      n++
-    ) {
+    for(let n=0;n<6;n++){
       m.push({
-        index:
-          m.length,
+        index:m.length,
 
         screenshotId:
-          `demo_${m.length + 1}`,
+          `demo_${m.length+1}`,
 
         activityId:
           `a${d}`,
 
         taken:
           Date.parse(
-            `${date}T${String(
-              9 + Math.floor(n / 2)
-            ).padStart(2, '0')}:${n % 2 ? '35' : '05'}:00Z`
-          )
-          /
-          1000,
+            `${date}T${String(9+Math.floor(n/2)).padStart(2,'0')}:${n%2?'35':'05'}:00Z`
+          )/1000,
 
         date,
 
         time:
-          `${9 + Math.floor(n / 2)}:${n % 2 ? '35' : '05'} AM`,
+          `${9+Math.floor(n/2)}:${n%2?'35':'05'} AM`,
 
         dateTime:
           `${date} demo`,
 
         application:
-          n % 2
-            ? 'Email'
-            : 'CRM',
+          n%2?'Email':'CRM',
 
-        activityLevel:
-          70,
-
-        imageUrl:
-          null,
-
-        thumbUrl:
-          null
+        activityLevel:70,
+        imageUrl:null,
+        thumbUrl:null
       });
     }
   }
 
-  const pol =
-    workPolicy(i);
+  const pol=workPolicy(i);
 
-  const batch =
-    clamp(
-      Number(
-        i.batchSize
-        ||
-        BATCH_SIZE_DEFAULT
-      ),
-      8,
-      BATCH_MAX
-    );
+  const batch=clamp(
+    Number(i.batchSize||BATCH_SIZE_DEFAULT),
+    8,
+    BATCH_MAX
+  );
 
-  const overlap =
-    Math.min(
-      BATCH_OVERLAP_DEFAULT,
-      batch - 1
-    );
+  const overlap=Math.min(
+    BATCH_OVERLAP_DEFAULT,
+    batch-1
+  );
 
-  const np =
-    batch - overlap;
+  const np=batch-overlap;
 
   return {
-    sessionKey:
-      key,
+    sessionKey:key,
 
-    connection: {
-      id:
-        'demo-main',
-
-      name:
-        'Demo Scrin Connection',
-
-      provider:
-        'scrin',
-
-      type:
-        'shared',
-
-      employer:
-        '',
-
-      employerLocked:
-        false,
-
-      status:
-        'demo'
+    connection:{
+      id:'demo-main',
+      name:'Demo Scrin Connection',
+      provider:'scrin',
+      type:'shared',
+      employer:'',
+      employerLocked:false,
+      status:'demo'
     },
 
-    period: {
+    period:{
       from,
-
       to,
-
-      dayCount:
-        dayCount(
-          from,
-          to
-        )
+      dayCount:dayCount(from,to)
     },
 
-    timezone: {
-      iana:
-        'America/Los_Angeles',
-
-      fallbackOffsetMinutes:
-        -420,
-
-      label:
-        'America/Los_Angeles'
+    timezone:{
+      iana:'America/Los_Angeles',
+      fallbackOffsetMinutes:-420,
+      label:'America/Los_Angeles'
     },
 
-    workPolicy:
-      pol,
+    workPolicy:pol,
 
-    metrics: {
-      trackedSeconds:
-        8 * 3600,
+    metrics:{
+      trackedSeconds:8*3600,
+      trackedHours:8,
 
-      trackedHours:
-        8,
+      onlineTrackedSeconds:8*3600,
+      onlineTrackedHours:8,
 
-      onlineTrackedSeconds:
-        8 * 3600,
+      offlineSeconds:0,
+      offlineHours:0,
 
-      onlineTrackedHours:
-        8,
+      activeDays:1,
 
-      offlineSeconds:
-        0,
-
-      offlineHours:
-        0,
-
-      activeDays:
-        1,
-
-      expectedHours:
-        Number(
-          i.expectedHours || 8
-        ),
-
-      scheduleCoveragePercent:
-        100
-    },
-
-    reconciliation: {
-      rawActivitiesReturned:
-        1,
-
-      activitiesUsed:
-        1,
-
-      activitiesExcludedOutsideRange:
-        0,
-
-      activitiesClippedAtBoundary:
-        0,
-
-      invalidActivityRecords:
-        0,
-
-      rawScreenshotRecordsReturned:
-        m.length,
-
-      dedupedScreenshotRecords:
-        m.length,
-
-      duplicateScreenshotRecordsRemoved:
-        0,
-
-      screenshotsExcludedOutsideRange:
-        0,
-
-      screenshotsExcludedInvalidTimestamp:
-        0,
-
-      finalScreenshotCount:
-        m.length,
-
-      reportingTimezone:
-        'America/Los_Angeles'
-    },
-
-    screenshotCount:
-      m.length,
-
-    screenshotDates:
-      unique(
-        m.map(
-          x =>
-            x.date
-        )
+      expectedHours:Number(
+        i.expectedHours||8
       ),
+
+      scheduleCoveragePercent:100
+    },
+
+    reconciliation:{
+      rawActivitiesReturned:1,
+      activitiesUsed:1,
+      activitiesExcludedOutsideRange:0,
+      activitiesClippedAtBoundary:0,
+      invalidActivityRecords:0,
+
+      rawScreenshotRecordsReturned:m.length,
+      dedupedScreenshotRecords:m.length,
+      duplicateScreenshotRecordsRemoved:0,
+
+      screenshotsExcludedOutsideRange:0,
+      screenshotsExcludedInvalidTimestamp:0,
+
+      finalScreenshotCount:m.length,
+      reportingTimezone:'America/Los_Angeles'
+    },
+
+    screenshotCount:m.length,
+
+    screenshotDates:unique(
+      m.map(x=>x.date)
+    ),
 
     screenshotDateCounts:
       dateCounts(m),
 
-    manifest:
-      m,
+    manifest:m,
 
     humanSample:
-      humanSample(
-        [],
-        key
-      ),
+      humanSample([],key),
 
-    scanPlan: {
-      batchSize:
-        batch,
-
-      overlapSize:
-        overlap,
-
-      newPerBatch:
-        np,
+    scanPlan:{
+      batchSize:batch,
+      overlapSize:overlap,
+      newPerBatch:np,
 
       totalBatches:
         m.length
-          ? Math.ceil(
-              m.length / np
-            )
-          : 0,
+          ?Math.ceil(m.length/np)
+          :0,
 
-      internalBatching:
-        true
+      internalBatching:true
     },
 
-    apps:
-      [],
+    apps:[],
 
-    review: {
-      status:
-        'Green',
-
-      reasons:
-        [],
-
-      note:
-        'Demo evidence package.'
+    review:{
+      status:'Green',
+      reasons:[],
+      note:'Demo evidence package.'
     },
 
-    versions: {
-      analysisVersion:
-        ANALYSIS_VERSION,
-
-      rulesVersion:
-        RULES_VERSION,
-
-      promptVersion:
-        PROMPT_VERSION,
-
-      profileVersion:
-        PROFILE_VERSION
+    versions:{
+      analysisVersion:ANALYSIS_VERSION,
+      rulesVersion:RULES_VERSION,
+      promptVersion:PROMPT_VERSION,
+      profileVersion:PROFILE_VERSION
     }
   };
 }
 
 export default {
-  async fetch(
-    request,
-    env
-  ) {
-    const url =
-      new URL(
-        request.url
-      );
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const demo = env.DEMO_MODE !== 'false';
 
-    const demo =
-      env.DEMO_MODE !==
-      'false';
-
-    if (
-      url.pathname ===
-      '/api/health'
-    ) {
+    if (url.pathname === '/api/health') {
       return json({
-        ok:
-          true,
-
-        mode:
-          demo
-            ? 'demo'
-            : 'live',
+        ok:true,
+        mode:demo?'demo':'live',
 
         connectionCount:
-          parseConnections(env)
-            .length,
+          parseConnections(env).length,
 
         analysisVersion:
           ANALYSIS_VERSION,
@@ -5887,7 +2936,7 @@ export default {
         defaultScanBatchSize:
           BATCH_SIZE_DEFAULT,
 
-        humanSampleRange: [
+        humanSampleRange:[
           HUMAN_SAMPLE_MIN,
           HUMAN_SAMPLE_MAX
         ],
@@ -5896,7 +2945,7 @@ export default {
           MIN_SCREENING_COVERAGE,
 
         stagnationThresholdMinutes:
-          STAGNATION_SECONDS / 60,
+          STAGNATION_SECONDS/60,
 
         scrinRequestTimeoutMs:
           SCRIN_TIMEOUT_MS,
@@ -5905,142 +2954,98 @@ export default {
           SCRIN_MAX_ATTEMPTS,
 
         screenshotFetchConcurrency:
-          SCREENSHOT_FETCH_CONCURRENCY
+          SCREENSHOT_FETCH_CONCURRENCY,
+
+        screenshotActivityIdsPerRequest:
+          SCREENSHOT_ACTIVITY_IDS_PER_REQUEST,
+
+        screenshotAdaptiveSplit:
+          true
       });
     }
 
-    if (
-      url.pathname ===
-      '/api/scrin/connections'
-    ) {
+    if (url.pathname === '/api/scrin/connections') {
       return json(
         demo
-          ? {
-              demo:
-                true,
+          ?{
+              demo:true,
 
-              connections: [
+              connections:[
                 {
-                  id:
-                    'demo-main',
-
-                  name:
-                    'Demo Scrin Connection',
-
-                  provider:
-                    'scrin',
-
-                  type:
-                    'shared',
-
-                  employer:
-                    '',
-
-                  employerLocked:
-                    false,
-
-                  status:
-                    'demo'
+                  id:'demo-main',
+                  name:'Demo Scrin Connection',
+                  provider:'scrin',
+                  type:'shared',
+                  employer:'',
+                  employerLocked:false,
+                  status:'demo'
                 }
               ]
             }
-          : {
-              demo:
-                false,
+          :{
+              demo:false,
 
               connections:
                 parseConnections(env)
-                  .map(
-                    publicConnection
-                  )
+                  .map(publicConnection)
             }
       );
     }
 
     if (
-      url.pathname ===
-        '/api/scrin/all-common'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/scrin/all-common' &&
+      request.method === 'POST'
     ) {
-      if (demo) {
-        const c = {
-          id:
-            'demo-main',
-
-          name:
-            'Demo Scrin Connection',
-
-          provider:
-            'scrin',
-
-          type:
-            'shared',
-
-          employer:
-            '',
-
-          token:
-            'demo'
+      if(demo){
+        const c={
+          id:'demo-main',
+          name:'Demo Scrin Connection',
+          provider:'scrin',
+          type:'shared',
+          employer:'',
+          token:'demo'
         };
 
-        const n =
-          commonNormalize(
-            demoCommon(),
-            c
-          );
+        const n=commonNormalize(
+          demoCommon(),
+          c
+        );
 
         return json({
-          demo:
-            true,
+          demo:true,
 
-          connections: [
+          connections:[
             {
               ...publicConnection(c),
-
-              status:
-                'connected',
-
-              employeeCount:
-                n.employees.length
+              status:'connected',
+              employeeCount:n.employees.length
             }
           ],
 
-          employees:
-            n.employees,
-
-          projects:
-            n.projects,
-
-          errors:
-            []
+          employees:n.employees,
+          projects:n.projects,
+          errors:[]
         });
       }
 
-      const employees = [];
-      const projects = [];
-      const connections = [];
-      const errors = [];
+      const employees=[];
+      const projects=[];
+      const connections=[];
+      const errors=[];
 
-      for (
-        const c of
-          parseConnections(env)
-      ) {
-        try {
-          const r =
-            await scrin(
-              env,
-              c.id,
-              '/api/v2/GetCommonData',
-              {}
-            );
+      for(const c of parseConnections(env)){
+        try{
+          const r=await scrin(
+            env,
+            c.id,
+            '/api/v2/GetCommonData',
+            {}
+          );
 
-          const n =
-            commonNormalize(
-              r.data,
-              c
-            );
+          const n=commonNormalize(
+            r.data,
+            c
+          );
 
           employees.push(
             ...n.employees
@@ -6048,122 +3053,81 @@ export default {
 
           projects.push(
             ...n.projects.map(
-              p => ({
+              p=>({
                 ...p,
-
-                connectionId:
-                  c.id,
-
-                connectionName:
-                  c.name
+                connectionId:c.id,
+                connectionName:c.name
               })
             )
           );
 
           connections.push({
             ...publicConnection(c),
-
-            status:
-              'connected',
-
-            employeeCount:
-              n.employees.length,
-
-            companyCount:
-              n.companies.length
+            status:'connected',
+            employeeCount:n.employees.length,
+            companyCount:n.companies.length
           });
 
-        } catch(e) {
+        }catch(e){
           errors.push({
-            connectionId:
-              c.id,
-
-            connectionName:
-              c.name,
-
-            error:
-              e.message
+            connectionId:c.id,
+            connectionName:c.name,
+            error:e.message
           });
 
           connections.push({
             ...publicConnection(c),
-
-            status:
-              'error',
-
-            employeeCount:
-              0,
-
-            error:
-              e.message
+            status:'error',
+            employeeCount:0,
+            error:e.message
           });
         }
       }
 
       return json({
-        demo:
-          false,
-
+        demo:false,
         connections,
-
         employees,
-
         projects,
-
         errors
       });
     }
 
     if (
-      url.pathname ===
-        '/api/scrin/activities'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/scrin/activities' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        if (
-          !Array.isArray(
-            b.ranges
-          )
-        ) {
+        if(!Array.isArray(b.ranges)){
           return json(
             {
-              error:
-                'Expected { connectionId, ranges: [...] }'
+              error:'Expected { connectionId, ranges: [...] }'
             },
             400
           );
         }
 
-        const r =
-          await scrin(
-            env,
-            b.connectionId,
-            '/api/v2/GetActivities',
-            b.ranges
-          );
+        const r=await scrin(
+          env,
+          b.connectionId,
+          '/api/v2/GetActivities',
+          b.ranges
+        );
 
         return json({
           connection:
-            publicConnection(
-              r.connection
-            ),
+            publicConnection(r.connection),
 
           activities:
             r.data
         });
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6171,55 +3135,40 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/scrin/screenshots'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/scrin/screenshots' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        if (
-          !Array.isArray(
-            b.activityIds
-          )
-        ) {
+        if(!Array.isArray(b.activityIds)){
           return json(
             {
-              error:
-                'Expected { connectionId, activityIds: [...] }'
+              error:'Expected { connectionId, activityIds: [...] }'
             },
             400
           );
         }
 
-        const r =
-          await scrin(
-            env,
-            b.connectionId,
-            '/api/v2/GetScreenshots',
-            b.activityIds
-          );
+        const r=await scrin(
+          env,
+          b.connectionId,
+          '/api/v2/GetScreenshots',
+          b.activityIds
+        );
 
         return json({
           connection:
-            publicConnection(
-              r.connection
-            ),
+            publicConnection(r.connection),
 
           screenshots:
             r.data
         });
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6227,97 +3176,58 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/employee-profile'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/employee-profile' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        if (demo) {
+        if(demo){
           return json({
-            profileVersion:
-              PROFILE_VERSION,
+            profileVersion:PROFILE_VERSION,
+            demo:true,
 
-            demo:
-              true,
+            employee:{
+              employmentId:String(
+                b.employmentId||100
+              ),
 
-            employee: {
-              employmentId:
-                String(
-                  b.employmentId
-                  ||
-                  100
-                ),
-
-              name:
-                'Sample VA',
-
-              scrinCompany:
-                'Demo Company'
+              name:'Sample VA',
+              scrinCompany:'Demo Company'
             },
 
-            period: {
-              from:
-                b.from,
-
-              to:
-                b.to
+            period:{
+              from:b.from,
+              to:b.to
             },
 
             workPolicy:
               workPolicy(b),
 
-            workSummary: {
-              trackedHours:
-                8,
-
-              activeDays:
-                1
+            workSummary:{
+              trackedHours:8,
+              activeDays:1
             },
 
-            monitoring: {
-              screenshotCount:
-                96,
-
-              captureDates:
-                1
+            monitoring:{
+              screenshotCount:96,
+              captureDates:1
             },
 
-            reconciliation: {
-              finalScreenshotCount:
-                96
+            reconciliation:{
+              finalScreenshotCount:96
             },
 
-            projects:
-              [],
+            projects:[],
+            applications:[],
+            urls:[],
+            notes:[],
+            sourceSchema:{},
 
-            applications:
-              [],
-
-            urls:
-              [],
-
-            notes:
-              [],
-
-            sourceSchema:
-              {},
-
-            sourceCapabilities: {
-              commonData:
-                true,
-
-              activities:
-                true,
-
-              screenshots:
-                true
+            sourceCapabilities:{
+              commonData:true,
+              activities:true,
+              screenshots:true
             }
           });
         }
@@ -6329,11 +3239,10 @@ export default {
           )
         );
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6341,32 +3250,22 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/screening/prepare'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/screening/prepare' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
         return json(
           demo
-            ? demoPrepared(b)
-            : await prepare(
-                env,
-                b
-              )
+            ?demoPrepared(b)
+            :await prepare(env,b)
         );
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6374,37 +3273,30 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/screening/batch'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/screening/batch' &&
+      request.method === 'POST'
     ) {
-      if (demo) {
+      if(demo){
         return json(
           {
-            error:
-              'Demo mode has no real screenshot image URLs.'
+            error:'Demo mode has no real screenshot image URLs.'
           },
           400
         );
       }
 
-      try {
+      try{
         return json(
           await scanBatch(
             env,
-            await readJson(
-              request
-            )
+            await readJson(request)
           )
         );
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6412,27 +3304,21 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/screening/finalize'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/screening/finalize' &&
+      request.method === 'POST'
     ) {
-      try {
+      try{
         return json(
           await finalize(
             env,
-            await readJson(
-              request
-            )
+            await readJson(request)
           )
         );
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6440,25 +3326,16 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/day-data'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/day-data' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        if (demo) {
+        if(demo){
           return json({
-            demo:
-              true,
-
-            date:
-              b.date,
+            demo:true,
+            date:b.date,
 
             firstTracked:
               '8:03 AM',
@@ -6467,10 +3344,10 @@ export default {
               '5:12 PM',
 
             trackedSeconds:
-              8.03 * 3600,
+              8.03*3600,
 
             onlineTrackedSeconds:
-              8.03 * 3600,
+              8.03*3600,
 
             offlineSeconds:
               0,
@@ -6481,177 +3358,138 @@ export default {
             screenshotCount:
               96,
 
-            reconciliation: {
-              finalScreenshotCount:
-                96
+            reconciliation:{
+              finalScreenshotCount:96
             },
 
-            sessions:
-              [],
-
-            screenshots:
-              []
+            sessions:[],
+            screenshots:[]
           });
         }
 
-        if (
-          !b.employmentId
-          ||
+        if(
+          !b.employmentId||
           !b.date
-        ) {
+        ){
           return json(
             {
-              error:
-                'employmentId and date are required'
+              error:'employmentId and date are required'
             },
             400
           );
         }
 
-        const e =
-          await evidence(
-            env,
-            {
-              ...b,
+        const e=await evidence(
+          env,
+          {
+            ...b,
+            from:b.date,
+            to:b.date
+          }
+        );
 
-              from:
-                b.date,
-
-              to:
-                b.date
-            }
+        const intervals=e.activities
+          .filter(x=>duration(x)>0)
+          .sort(
+            (a,b)=>Number(a.from)-Number(b.from)
           );
 
-        const intervals =
-          e.activities
-            .filter(
-              x =>
-                duration(x) > 0
-            )
-            .sort(
-              (a, b) =>
-                Number(a.from)
-                -
-                Number(b.from)
-            );
+        const sessions=[];
 
-        const sessions = [];
+        if(intervals.length){
+          let s=Number(
+            intervals[0].from
+          );
 
-        if (
-          intervals.length
-        ) {
-          let s =
-            Number(
-              intervals[0].from
-            );
+          let end=Number(
+            intervals[0].to
+          );
 
-          let end =
-            Number(
-              intervals[0].to
-            );
-
-          for (
-            let i = 1;
-            i < intervals.length;
+          for(
+            let i=1;
+            i<intervals.length;
             i++
-          ) {
-            const ns =
-              Number(
-                intervals[i].from
+          ){
+            const ns=Number(
+              intervals[i].from
+            );
+
+            const ne=Number(
+              intervals[i].to
+            );
+
+            if(ns<=end+90){
+              end=Math.max(
+                end,
+                ne
               );
-
-            const ne =
-              Number(
-                intervals[i].to
-              );
-
-            if (
-              ns <= end + 90
-            ) {
-              end =
-                Math.max(
-                  end,
-                  ne
-                );
-
             } else {
               sessions.push({
-                from:
-                  localTime(
-                    s,
-                    e.tz,
-                    e.off
-                  ),
+                from:localTime(
+                  s,
+                  e.tz,
+                  e.off
+                ),
 
-                to:
-                  localTime(
-                    end,
-                    e.tz,
-                    e.off
-                  ),
+                to:localTime(
+                  end,
+                  e.tz,
+                  e.off
+                ),
 
-                seconds:
-                  end - s
+                seconds:end-s
               });
 
-              s = ns;
-              end = ne;
+              s=ns;
+              end=ne;
             }
           }
 
           sessions.push({
-            from:
-              localTime(
-                s,
-                e.tz,
-                e.off
-              ),
+            from:localTime(
+              s,
+              e.tz,
+              e.off
+            ),
 
-            to:
-              localTime(
-                end,
-                e.tz,
-                e.off
-              ),
+            to:localTime(
+              end,
+              e.tz,
+              e.off
+            ),
 
-            seconds:
-              end - s
+            seconds:end-s
           });
         }
 
-        const m =
-          manifest(
-            e.screenshots,
-            e.tz,
-            e.off
-          );
+        const m=manifest(
+          e.screenshots,
+          e.tz,
+          e.off
+        );
 
-        const metrics =
-          activitySummary(
-            e.activities,
-            0,
-            e.tz,
-            e.off,
-            workPolicy(b)
-          );
+        const metrics=activitySummary(
+          e.activities,
+          0,
+          e.tz,
+          e.off,
+          workPolicy(b)
+        );
 
         return json({
-          demo:
-            false,
+          demo:false,
 
           connection:
             publicConnection(
               e.connection
             ),
 
-          date:
-            b.date,
+          date:b.date,
 
-          timezone: {
-            iana:
-              validTz(e.tz)
-                ? e.tz
-                : null,
+          timezone:{
+            iana:validTz(e.tz)
+              ?e.tz
+              :null,
 
             fallbackOffsetMinutes:
               e.off,
@@ -6662,26 +3500,25 @@ export default {
 
           firstTracked:
             intervals.length
-              ? localTime(
+              ?localTime(
                   intervals[0].from,
                   e.tz,
                   e.off
                 )
-              : '—',
+              :'—',
 
           lastTracked:
             intervals.length
-              ? localTime(
+              ?localTime(
                   Math.max(
                     ...intervals.map(
-                      x =>
-                        Number(x.to)
+                      x=>Number(x.to)
                     )
                   ),
                   e.tz,
                   e.off
                 )
-              : '—',
+              :'—',
 
           trackedSeconds:
             metrics.trackedSeconds,
@@ -6703,41 +3540,24 @@ export default {
 
           sessions,
 
-          screenshots:
-            m.map(
-              x => ({
-                id:
-                  x.screenshotId,
-
-                activityId:
-                  x.activityId,
-
-                taken:
-                  x.taken,
-
-                time:
-                  x.time,
-
-                application:
-                  x.application,
-
-                activityLevel:
-                  x.activityLevel,
-
-                thumbUrl:
-                  x.thumbUrl,
-
-                url:
-                  x.imageUrl
-              })
-            )
+          screenshots:m.map(
+            x=>({
+              id:x.screenshotId,
+              activityId:x.activityId,
+              taken:x.taken,
+              time:x.time,
+              application:x.application,
+              activityLevel:x.activityLevel,
+              thumbUrl:x.thumbUrl,
+              url:x.imageUrl
+            })
+          )
         });
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6745,115 +3565,62 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/period-analytics'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/period-analytics' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        const p =
+        const p=
           demo
-            ? demoPrepared(b)
-            : await prepare(
-                env,
-                b
-              );
+            ?demoPrepared(b)
+            :await prepare(env,b);
 
         return json({
-          current: {
-            period:
-              p.period,
+          current:{
+            period:p.period,
+            connection:p.connection,
+            metrics:p.metrics,
+            workPolicy:p.workPolicy,
+            reconciliation:p.reconciliation,
+            preparationTiming:p.preparationTiming,
 
-            connection:
-              p.connection,
-
-            metrics:
-              p.metrics,
-
-            workPolicy:
-              p.workPolicy,
-
-            reconciliation:
-              p.reconciliation,
-
-            preparationTiming:
-              p.preparationTiming,
-
-            evidence: {
-              screenshotCount:
-                p.screenshotCount,
-
-              activeDays:
-                p.metrics.activeDays,
-
-              daysWithScreenshots:
-                p.screenshotDates.length,
-
-              evidenceCoveragePercent:
-                p.screenshotCount
-                  ? 100
-                  : 0
+            evidence:{
+              screenshotCount:p.screenshotCount,
+              activeDays:p.metrics.activeDays,
+              daysWithScreenshots:p.screenshotDates.length,
+              evidenceCoveragePercent:p.screenshotCount?100:0
             },
 
-            apps:
-              p.apps,
-
-            screenshotDates:
-              p.screenshotDates,
+            apps:p.apps,
+            screenshotDates:p.screenshotDates,
 
             selectedScreenshotEvidence:
-              p.humanSample
-                .screenshots
-                .slice(
-                  0,
-                  12
-                ),
+              p.humanSample.screenshots.slice(0,12),
 
-            humanSample:
-              p.humanSample,
-
-            scanPlan:
-              p.scanPlan,
-
-            review:
-              p.review,
-
-            versions:
-              p.versions
+            humanSample:p.humanSample,
+            scanPlan:p.scanPlan,
+            review:p.review,
+            versions:p.versions
           },
 
-          previous:
-            null,
+          previous:null,
 
-          comparison: {
-            available:
-              false
+          comparison:{
+            available:false
           },
 
-          metadata: {
-            generatedAt:
-              new Date()
-                .toISOString(),
-
-            analysisVersion:
-              ANALYSIS_VERSION,
-
-            rulesVersion:
-              RULES_VERSION
+          metadata:{
+            generatedAt:new Date().toISOString(),
+            analysisVersion:ANALYSIS_VERSION,
+            rulesVersion:RULES_VERSION
           }
         });
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6861,55 +3628,34 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/wgm/period-data'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/wgm/period-data' &&
+      request.method === 'POST'
     ) {
-      try {
-        const b =
-          await readJson(
-            request
-          );
+      try{
+        const b=await readJson(request);
 
-        const p =
+        const p=
           demo
-            ? demoPrepared(b)
-            : await prepare(
-                env,
-                b
-              );
+            ?demoPrepared(b)
+            :await prepare(env,b);
 
         return json({
-          connection:
-            p.connection,
+          connection:p.connection,
+          metrics:p.metrics,
+          workPolicy:p.workPolicy,
+          reconciliation:p.reconciliation,
+          preparationTiming:p.preparationTiming,
 
-          metrics:
-            p.metrics,
+          workstreams:[],
 
-          workPolicy:
-            p.workPolicy,
+          apps:p.apps.map(
+            x=>[
+              x.name,
+              x.sharePercent
+            ]
+          ),
 
-          reconciliation:
-            p.reconciliation,
-
-          preparationTiming:
-            p.preparationTiming,
-
-          workstreams:
-            [],
-
-          apps:
-            p.apps.map(
-              x => [
-                x.name,
-                x.sharePercent
-              ]
-            ),
-
-          averageActivityLevel:
-            null,
+          averageActivityLevel:null,
 
           screenshotCount:
             p.screenshotCount,
@@ -6918,33 +3664,19 @@ export default {
             p.screenshotDates,
 
           selectedScreenshotEvidence:
-            p.humanSample
-              .screenshots
-              .slice(
-                0,
-                12
-              ),
+            p.humanSample.screenshots.slice(0,12),
 
-          screenshotEvidenceSummary: {
-            count:
-              p.screenshotCount,
-
-            captureDates:
-              p.screenshotDates.length,
-
-            topApplications:
-              p.apps.slice(
-                0,
-                6
-              )
+          screenshotEvidenceSummary:{
+            count:p.screenshotCount,
+            captureDates:p.screenshotDates.length,
+            topApplications:p.apps.slice(0,6)
           }
         });
 
-      } catch(e) {
+      }catch(e){
         return json(
           {
-            error:
-              e.message
+            error:e.message
           },
           500
         );
@@ -6952,16 +3684,12 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/reports/generate'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/reports/generate' &&
+      request.method === 'POST'
     ) {
       return json({
-        report: {
-          overallResult:
-            'review',
+        report:{
+          overallResult:'review',
 
           screeningHeadline:
             'Full-period screening required.',
@@ -6969,21 +3697,15 @@ export default {
           screeningSubtext:
             'Use the V2.1 full-period screening workflow before human approval and release.',
 
-          checks:
-            CHECK_KEYS.map(
-              key => ({
-                key,
+          checks:CHECK_KEYS.map(
+            key=>({
+              key,
+              status:'not_assessed',
+              detail:'Full-period screening has not been completed.'
+            })
+          ),
 
-                status:
-                  'not_assessed',
-
-                detail:
-                  'Full-period screening has not been completed.'
-              })
-            ),
-
-          findings:
-            [],
+          findings:[],
 
           scopeNote:
             'Legacy compatibility draft only.'
@@ -6998,10 +3720,9 @@ export default {
         warning:
           'Legacy compatibility endpoint used.',
 
-        metadata: {
+        metadata:{
           generatedAt:
-            new Date()
-              .toISOString(),
+            new Date().toISOString(),
 
           promptVersion:
             PROMPT_VERSION,
@@ -7022,20 +3743,13 @@ export default {
     }
 
     if (
-      url.pathname ===
-        '/api/reports/release'
-      &&
-      request.method ===
-        'POST'
+      url.pathname === '/api/reports/release' &&
+      request.method === 'POST'
     ) {
-      const b =
-        await readJson(
-          request
-        );
+      const b=await readJson(request);
 
       return json({
-        status:
-          'released',
+        status:'released',
 
         releaseId:
           `wgm_${Date.now()}`,
@@ -7047,42 +3761,30 @@ export default {
           false,
 
         employeeId:
-          b.employeeId || null,
+          b.employeeId||null,
 
         employer:
-          b.employer || null,
+          b.employer||null,
 
         period:
-          b.period || null,
+          b.period||null,
 
         releasedAt:
-          new Date()
-            .toISOString()
+          new Date().toISOString()
       });
     }
 
-    if (
-      url.pathname.startsWith(
-        '/api/'
-      )
-    ) {
+    if(url.pathname.startsWith('/api/')){
       return json(
         {
-          error:
-            'API route not found',
-
-          method:
-            request.method,
-
-          path:
-            url.pathname
+          error:'API route not found',
+          method:request.method,
+          path:url.pathname
         },
         404
       );
     }
 
-    return env.ASSETS.fetch(
-      request
-    );
+    return env.ASSETS.fetch(request);
   },
 };
