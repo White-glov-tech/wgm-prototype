@@ -6929,64 +6929,35 @@ function reportLogo() {
   `;
 }
 
-function reportMarkup(
-  snapshot,
-  preview = false
-) {
-  const employee =
-    snapshot.employee || {
-      name:
-        snapshot.employeeName,
+function reportMarkup(snapshot, preview = false) {
+  const employee = snapshot.employee || {
+    name: snapshot.employeeName,
+    employer: snapshot.employer,
+    timezone: snapshot.timezone,
+  };
 
-      employer:
-        snapshot.employer,
+  const report = snapshot.report || state.report;
+  const prepared = snapshot.prepared || state.prepared;
+  const period = snapshot.period || state.period;
+  const reviewerName = snapshot.reviewerName || state.reviewerName;
 
-      timezone:
-        snapshot.timezone,
-    };
+  const humanChecked = Number(
+    snapshot.humanChecked ??
+    humanReviewedCount()
+  );
 
-  const report =
-    snapshot.report ||
-    state.report;
+  const screened = Number(
+    report?.screenedScreenshots || 0
+  );
 
-  const prepared =
-    snapshot.prepared ||
-    state.prepared;
-
-  const period =
-    snapshot.period ||
-    state.period;
-
-  const reviewerName =
-    snapshot.reviewerName ||
-    state.reviewerName;
-
-  const humanChecked =
-    Number(
-      snapshot.humanChecked ??
-      humanReviewedCount()
-    );
-
-  const screened =
-    Number(
-      report
-        ?.screenedScreenshots ||
-      0
-    );
-
-  const recordedHours =
-    Number(
-      prepared
-        ?.metrics
-        ?.trackedHours ||
-      0
-    );
+  const recordedHours = Number(
+    prepared?.metrics?.trackedHours || 0
+  );
 
   const approved =
     !preview &&
     /Approved|Released/i.test(
-      snapshot.status ||
-      ''
+      snapshot.status || ''
     );
 
   const checks =
@@ -7022,8 +6993,7 @@ function reportMarkup(
           data-page="${
             preview
               ? 'review'
-              : state.role ===
-                'employer'
+              : state.role === 'employer'
                 ? 'employerReports'
                 : 'reports'
           }"
@@ -7065,7 +7035,10 @@ function reportMarkup(
 
       </div>
 
-      <section class="fs-page">
+      <section
+        class="fs-page"
+        style="padding-bottom:5mm"
+      >
 
         <div class="fs-top">
 
@@ -7093,8 +7066,7 @@ function reportMarkup(
           <strong>
             ${esc(
               employee.name ||
-              snapshot
-                .employeeName ||
+              snapshot.employeeName ||
               ''
             )}
           </strong>
@@ -7119,9 +7091,7 @@ function reportMarkup(
             ${esc(
               employee.timezone ||
               snapshot.timezone ||
-              prepared
-                ?.timezone
-                ?.label ||
+              prepared?.timezone?.label ||
               ''
             )}
           </span>
@@ -7381,20 +7351,14 @@ function reportMarkup(
                 workPolicyContext(
                   {
                     workPolicyType:
-                      snapshot
-                        .workPolicyType ||
-                      employee
-                        .workPolicyType,
+                      snapshot.workPolicyType ||
+                      employee.workPolicyType,
 
                     workPolicyTarget:
-                      snapshot
-                        .workPolicyTarget ||
-                      employee
-                        .workPolicyTarget,
+                      snapshot.workPolicyTarget ||
+                      employee.workPolicyTarget,
                   },
-
                   period,
-
                   prepared
                 )
               )}
@@ -7404,7 +7368,13 @@ function reportMarkup(
 
         </div>
 
-        <div class="fs-sign">
+        <div
+          class="fs-sign"
+          style="
+            margin-top:3mm;
+            padding-top:2.5mm
+          "
+        >
 
           <div class="fs-signicon">
             ✓
@@ -7448,6 +7418,67 @@ function reportMarkup(
               as findings of employee misconduct.
             </div>
 
+          </div>
+
+        </div>
+
+        <div
+          style="
+            margin-top:2.5mm;
+            background:#1A2947;
+            border-radius:8px;
+            padding:2.5mm 3.2mm;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:3mm;
+            color:#fff;
+            break-inside:avoid;
+            page-break-inside:avoid
+          "
+        >
+
+          <div
+            style="
+              min-width:0;
+              font-size:5.8px;
+              line-height:1.3;
+              color:#e6ebf2
+            "
+          >
+
+            <b
+              style="
+                display:block;
+                margin-bottom:.7mm;
+                color:#C9A84C;
+                font-size:6.8px;
+                line-height:1.15;
+                letter-spacing:.04em
+              "
+            >
+              WE VALUE YOUR BUSINESS — AND YOUR REFERRALS.
+            </b>
+
+            <span>
+              Refer a real estate professional closing 20+ homes/year who becomes a White Glove client.
+            </span>
+
+          </div>
+
+          <div
+            style="
+              flex:0 0 auto;
+              background:#C9A84C;
+              color:#1A2947;
+              border-radius:99px;
+              padding:1.8mm 3mm;
+              font-size:6px;
+              font-weight:900;
+              white-space:nowrap
+            "
+          >
+            EARN $180/MONTH
           </div>
 
         </div>
