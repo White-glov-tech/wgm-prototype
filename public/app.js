@@ -8103,6 +8103,34 @@ function dataSourcesPage() {
   `, 'Data Sources');
 }
 
+function isValidWgmTimezone(value) {
+  const tz =
+    String(
+      value ||
+      ''
+    ).trim();
+
+  if (!tz) {
+    return false;
+  }
+
+  try {
+    new Intl.DateTimeFormat(
+      'en-US',
+      {
+        timeZone: tz,
+      }
+    ).format(
+      new Date()
+    );
+
+    return true;
+
+  } catch {
+    return false;
+  }
+}
+
 function timezoneSelect(employee) {
   const options = [
     'America/Los_Angeles',
@@ -8116,11 +8144,18 @@ function timezoneSelect(employee) {
     'Africa/Lagos',
   ];
 
-  const current =
+  const rawCurrent =
     String(
       employee.timezone ||
       ''
-    );
+    ).trim();
+
+  const current =
+    isValidWgmTimezone(
+      rawCurrent
+    )
+      ? rawCurrent
+      : '';
 
   const all =
     current &&
@@ -8139,7 +8174,14 @@ function timezoneSelect(employee) {
       )}"
     >
 
-      <option value="">
+      <option
+        value=""
+        ${
+          !current
+            ? 'selected'
+            : ''
+        }
+      >
         Select timezone…
       </option>
 
@@ -8149,8 +8191,7 @@ function timezoneSelect(employee) {
             <option
               value="${esc(tz)}"
               ${
-                tz ===
-                current
+                tz === current
                   ? 'selected'
                   : ''
               }
@@ -8499,25 +8540,6 @@ function saveMappings() {
 
   document
     .querySelectorAll(
-      '[data-map-timezone]'
-    )
-    .forEach(
-      (input) => {
-        const e =
-          employeeById(
-            input.dataset
-              .mapTimezone
-          );
-
-        if (e) {
-          e.timezone =
-            input.value.trim();
-        }
-      }
-    );
-
-  document
-    .querySelectorAll(
       '[data-map-monitored]'
     )
     .forEach(
@@ -8531,6 +8553,53 @@ function saveMappings() {
         if (e) {
           e.excluded =
             !input.checked;
+        }
+      }
+    );
+
+  let invalidTimezoneCount =
+    0;
+
+  document
+    .querySelectorAll(
+      '[data-map-timezone]'
+    )
+    .forEach(
+      (input) => {
+        const e =
+          employeeById(
+            input.dataset
+              .mapTimezone
+          );
+
+        if (!e) {
+          return;
+        }
+
+        const value =
+          String(
+            input.value ||
+            ''
+          ).trim();
+
+        if (
+          value &&
+          isValidWgmTimezone(
+            value
+          )
+        ) {
+          e.timezone =
+            value;
+
+        } else {
+          e.timezone =
+            '';
+
+          if (
+            !e.excluded
+          ) {
+            invalidTimezoneCount++;
+          }
         }
       }
     );
@@ -8600,18 +8669,19 @@ function saveMappings() {
           e.employer ||
           ''
         ).trim() ||
-        !String(
-          e.timezone ||
-          ''
-        ).trim()
+        !isValidWgmTimezone(
+          e.timezone
+        )
     );
 
   ensureEmployerSelection();
 
   toast(
-    invalid.length
-      ? `${invalid.length} monitored employee(s) still need an employer or timezone.`
-      : 'Employee monitoring, timezone and work-policy settings saved.'
+    invalidTimezoneCount
+      ? `${invalidTimezoneCount} monitored employee(s) still need a valid reporting timezone.`
+      : invalid.length
+        ? `${invalid.length} monitored employee(s) still need an employer or valid timezone.`
+        : 'Employee monitoring, timezone and work-policy settings saved.'
   );
 }
 
@@ -8635,6 +8705,33 @@ function mergeEmployee(
           ''
         )
       : null;
+
+  const savedTimezone =
+    isValidWgmTimezone(
+      old.timezone
+    )
+      ? String(
+          old.timezone
+        ).trim()
+      : '';
+
+  const scrinTimezone =
+    isValidWgmTimezone(
+      incoming.scrinTimezone
+    )
+      ? String(
+          incoming.scrinTimezone
+        ).trim()
+      : '';
+
+  const incomingTimezone =
+    isValidWgmTimezone(
+      incoming.timezone
+    )
+      ? String(
+          incoming.timezone
+        ).trim()
+      : '';
 
   return {
     ...incoming,
@@ -8710,10 +8807,9 @@ function mergeEmployee(
       ),
 
     timezone:
-      old.timezone ||
-      incoming
-        .scrinTimezone ||
-      incoming.timezone ||
+      savedTimezone ||
+      scrinTimezone ||
+      incomingTimezone ||
       '',
 
     timezoneOffsetMinutes:
@@ -8753,7 +8849,6 @@ function mergeEmployee(
       'Synced',
   };
 }
-
 async function syncScrin() {
   state.syncMessage =
     'Syncing all Scrin connections…';
